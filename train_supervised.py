@@ -11,7 +11,7 @@ import torch
 import numpy as np
 
 from model.tgn import TGN
-from utils.utils import get_neighbor_finder, MLP
+from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class
 from utils.data_processing import compute_time_statistics, get_data_node_classification
 from evaluation.eval_node_classification import train_val_test_evalulation_node_prediction, sliding_window_evaluation_node_prediction
 from utils.data_exploration import collect_burstiness_data_over_sliding_window, collect_burstiness_time_data_over_sliding_window
@@ -117,6 +117,9 @@ logger.info(args)
 full_data, node_features, edge_features, train_data, val_data, test_data = \
   get_data_node_classification(DATA, use_validation=args.use_validation)
 
+assert full_data.n_unique_labels == train_data.n_unique_labels
+assert train_data.n_unique_labels == test_data.n_unique_labels
+
 max_idx = max(full_data.unique_nodes)
 
 train_ngh_finder = get_neighbor_finder(train_data, uniform=UNIFORM, max_node_idx=max_idx)
@@ -189,13 +192,16 @@ for i in range(args.n_runs):
   #   )
 
   ## use with pre-training model to substitute prediction head
-  decoder = MLP(node_features.shape[1], drop=DROP_OUT)
-  decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
-  decoder = decoder.to(device)
-  decoder_loss_criterion = torch.nn.BCELoss()
-
-  criterion = torch.nn.BCELoss()
-  optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
+  if train_data.n_unique_labels == 2:
+    decoder = MLP(node_features.shape[1], drop=DROP_OUT)
+    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+    decoder = decoder.to(device)
+    decoder_loss_criterion = torch.nn.BCELoss()
+  else:
+    decoder = MLP_multiple_class(node_features.shape[1], full_data.n_unique_labels ,drop=DROP_OUT)
+    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+    decoder = decoder.to(device)
+    decoder_loss_criterion = torch.nn.CrossEntropyLoss()
 
   # collect_burstiness_data_over_sliding_window(
   #   logger,

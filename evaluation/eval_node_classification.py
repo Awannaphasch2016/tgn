@@ -10,9 +10,14 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from utils.utils import EarlyStopMonitor
 from utils.data_processing import Data
 from tqdm import tqdm
+from sklearn.metrics import confusion_matrix
+
+def accuracy(labels,  pred):
+
+  return (labels == pred).sum()/labels.shape[0]
 
 def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
-  pred_prob = np.zeros(len(data.sources))
+  pred_prob = np.zeros((len(data.sources), data.n_unique_labels))
   num_instance = len(data.sources)
   num_batch = math.ceil(num_instance / batch_size)
   # print(num_instance, num_batch)  # 672 7
@@ -21,6 +26,7 @@ def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighb
     decoder.eval()
     tgn.eval()
     for k in range(num_batch):
+
       s_idx = k * batch_size
       e_idx = min(num_instance, s_idx + batch_size)
       # print(s_idx, e_idx)
@@ -39,16 +45,41 @@ def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighb
       # edge_idxs_batch = data.edge_idxs[s_idx: e_idx]
 
       source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
-                                                                                   destinations_batch,
-                                                                                   destinations_batch,
-                                                                                   timestamps_batch,
-                                                                                   edge_idxs_batch,
-                                                                                   n_neighbors)
-      pred_prob_batch = decoder(source_embedding).sigmoid()
-      pred_prob[s_idx: e_idx] = pred_prob_batch.cpu().numpy()
+                                                                                    destinations_batch,
+                                                                                    destinations_batch,
+                                                                                    timestamps_batch,
+                                                                                    edge_idxs_batch)
 
-  auc_roc = roc_auc_score(data.labels, pred_prob)
-  return auc_roc
+      if data.n_unique_labels == 2:
+        # source_embedding.shape = (100, 172)
+        pred_prob_batch = decoder(source_embedding).sigmoid()
+        pred_prob[s_idx: e_idx, : ] = pred_prob_batch.cpu().numpy()
+        pred_prob = pred_prob.reshape(-1)
+      elif data.n_unique_labels == 4:
+        pred_prob_batch = decoder(source_embedding).softmax(dim=1)
+        pred_prob[s_idx: e_idx, :] = pred_prob_batch.cpu().numpy()
+      else:
+        raise NotImplementedError
+
+
+  if pred_prob.reshape(-1).shape[0] == pred_prob.shape[0]:
+    pred = pred_prob > 0.5
+  else:
+    pred = pred_prob.argmax(axis=1)
+
+  # pred_prob.shape = (1000867, )
+  # data.labels.shape = (1000867, )
+
+  auc_roc = None
+  acc = accuracy(data.labels, pred)
+  cm = confusion_matrix(data.labels, pred, labels=np.unique(data.labels))
+  if data.n_unique_labels == 2:
+    try:
+      auc_roc = roc_auc_score(data.labels, pred_prob)
+    except:
+      raise "Something is wrong."
+
+  return auc_roc, acc, cm
 
   # try:
     # auc_roc = roc_auc_score(data.labels, pred_prob)
@@ -94,6 +125,8 @@ def train_val_test_evalulation_node_prediction(
   # logger.info('Start training node classification task')
 
   val_aucs = []
+  val_accs = []
+  cms = []
   train_losses = []
 
 
@@ -111,9 +144,12 @@ def train_val_test_evalulation_node_prediction(
     # decoder = decoder.train()
     loss = 0
 
-    # for ind_, k in enumerate(range(num_batch)):
-    for ind_, k in enumerate(tqdm(list(range(num_batch)))):
-      # print(ind_)
+    for k in tqdm(list(range(num_batch))):
+
+      # if k == 3:
+      #   break
+
+      start_batch = time.time()
       # tgn = tgn.train()
       s_idx = k * BATCH_SIZE
       e_idx = min(num_instance, s_idx + BATCH_SIZE)
@@ -137,38 +173,51 @@ def train_val_test_evalulation_node_prediction(
                                                                                     edge_idxs_batch,
                                                                                     NUM_NEIGHBORS)
 
-      labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
-      pred = decoder(source_embedding).sigmoid()
-      decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+      if train_data.n_unique_labels == 2:
+        pred = decoder(source_embedding).sigmoid()
+        labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
+        decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+      elif train_data.n_unique_labels == 4:
+        # using Crossentropy
+        pred = decoder(source_embedding).softmax(dim=1)
+        labels_batch_torch = torch.from_numpy(labels_batch).long().to(device)
+        decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+      else:
+        raise NotImplementedError
+
+
       decoder_loss.backward(retain_graph=True)
       decoder_optimizer.step()
-      loss += decoder_loss.item()
+      loss_batch = decoder_loss.item()
+      # logger.info(f'batch {k}/{num_batch}: train loss: {loss_batch}, time: {time.time() - start_batch}')
+      loss += loss_batch
 
     train_losses.append(loss / num_batch)
 
 
-    val_auc = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, BATCH_SIZE,
+    val_auc, val_acc, cm = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, BATCH_SIZE,
                                        n_neighbors=NUM_NEIGHBORS)
 
-
-    val_aucs.append(val_auc)
-
-    # pickle.dump({
-    #   "val_aps": val_aucs,
-    #   "train_losses": train_losses,
-    #   "epoch_times": [0.0],
-    #   "new_nodes_val_aps": [],
-    # }, open(results_path, "wb"))
-
-    logger.info(f'Epoch {epoch}: train loss: {loss / num_batch}, val auc: {val_auc}, time: {time.time() - start_epoch}')
-
+    val_accs.append(val_acc)
+    cms.append(cm)
+    if val_auc is not None:
+      val_aucs.append(val_auc)
+      logger.info(f'Epoch {epoch}: train loss: {loss / num_batch}, val_acc: {val_acc}, val auc: {val_auc}, time: {time.time() - start_epoch}')
+    logger.info(f'Epoch {epoch}: train loss: {loss / num_batch}, val acc: {val_acc}, time: {time.time() - start_epoch}\n confusion matrix = \n{cm}')
 
   if args.use_validation:
-    if early_stopper.early_stop_check(val_auc):
-      logger.info('No improvement over {} epochs, stop training'.format(early_stopper.max_round))
-      return
-    else:
-      torch.save(decoder.state_dict(), get_checkpoint_path(epoch))
+    try:
+      if early_stopper.early_stop_check(val_auc):
+        logger.info('No improvement over {} epochs, stop training'.format(early_stopper.max_round))
+        return
+      else:
+        torch.save(decoder.state_dict(), get_checkpoint_path(epoch))
+    except:
+      pass
+
+  test_auc = None
+  test_acc = None
+  test_cm = None
 
   if args.use_validation:
     logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
@@ -177,12 +226,16 @@ def train_val_test_evalulation_node_prediction(
     logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
     decoder.eval()
 
-    test_auc = eval_node_classification(tgn, decoder, test_data, full_data.edge_idxs, BATCH_SIZE,
+    test_auc, test_acc, cm = eval_node_classification(tgn, decoder, test_data, full_data.edge_idxs, BATCH_SIZE,
                                         n_neighbors=NUM_NEIGHBORS)
+
   else:
     # If we are not using a validation set, the test performance is just the performance computed
     # in the last epoch
-    test_auc = val_aucs[-1]
+    test_acc = val_accs[-1]
+    cm = cms[-1]
+    if val_auc is not None:
+      test_auc = val_aucs[-1]
 
   # pickle.dump({
   #   "val_aps": val_aucs,
@@ -193,7 +246,9 @@ def train_val_test_evalulation_node_prediction(
   #   "new_node_test_ap": 0,
   # }, open(results_path, "wb"))
 
-  logger.info(f'test auc: {test_auc}')
+  if test_auc is not None:
+    logger.info(f'test auc: {test_auc}, test acc: {test_acc}.\nconfusion matrix\n={cm}')
+  logger.info(f'test acc: {test_acc}\nconfusion matrix\n={cm}')
 
 def sliding_window_evaluation_node_prediction(
     logger,
@@ -210,7 +265,6 @@ def sliding_window_evaluation_node_prediction(
     test_data,
     full_data,
     NUM_NEIGHBORS,
-    results_path,
     get_checkpoint_path,
     DATA,
     decoder,
@@ -383,10 +437,3 @@ def sliding_window_evaluation_node_prediction(
     if USE_MEMORY:
       val_memory_backup = tgn.memory.backup_memory()
 
-
-def accuracy(labels,  pred_prob):
-  sum = []
-  for i, j in zip(labels, pred_prob.max(axis=1)):
-    if i == j:
-      sum += 1
-  return sum(sum)/len(sum)

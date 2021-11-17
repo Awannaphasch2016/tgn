@@ -130,8 +130,6 @@ class TGN(torch.nn.Module):
     if self.use_memory:
       if self.memory_update_at_start:
         # Update memory for all nodes with messages stored in previous batches
-        # print(self.memory.messages[0])
-        # print('$$$$$$$$')
 
         memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
                                                       self.memory.messages)

@@ -1,0 +1,12 @@
+#+TITLE: Readme
+
+* todo list
+** Roadmap [0/1]
+- [-] run script on HPC cluster.
+
+** Refine + Refactors [1/5]
+- [ ] create AUC for multilabel classes (seem too cumbersome)
+- [ ] implement early stopper that use accuracy value as a fall back when auc is none(good approach)
+- [X] create accuracy for multilabel classes.
+- [ ] reduce chromatic complexity by removing condition [[file:evaluation/eval_node_classification.py::if data.n_unique_labels == 2:][number of labels based condition.]]
+- [ ] create yaml file to keep track of parameters (help with git commit log)
