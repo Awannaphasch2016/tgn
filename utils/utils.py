@@ -91,11 +91,21 @@ class RandEdgeSampler(object):
 def get_neighbor_finder(data, uniform, max_node_idx=None):
   max_node_idx = max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx
   adj_list = [[] for _ in range(max_node_idx + 1)]
-  for source, destination, edge_idx, timestamp in zip(data.sources, data.destinations,
+
+  # print(max_node_idx)
+  # print(data.destinations.shape)
+  # print(data.sources.shape)
+  # print(data.edge_idxs.shape)
+  # print(data.timestamps.shape)
+
+  for i, (source, destination, edge_idx, timestamp) in enumerate(zip(data.sources, data.destinations,
                                                       data.edge_idxs,
-                                                      data.timestamps):
+                                                      data.timestamps)):
     adj_list[source].append((destination, edge_idx, timestamp))
     adj_list[destination].append((source, edge_idx, timestamp))
+
+  # print(len(adj_list))
+  # print('------')
 
   return NeighborFinder(adj_list, uniform=uniform)
 
@@ -122,12 +132,23 @@ class NeighborFinder:
 
   def find_before(self, src_idx, cut_time):
     """
-    Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
+    Extracts all the interactions happening before cut_time for user src_idx in the overall
+    interaction graph. The returned interactions are sorted by time.
 
     Returns 3 lists: neighbors, edge_idxs, timestamps
 
     """
+
+    # print(len(self.node_to_edge_timestamps))
+    # print(src_idx)
+    # print(self.node_to_edge_timestamps[src_idx].shape)
+    # print(self.node_to_edge_timestamps[src_idx])
+    # print(cut_time)
+
     i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
+
+    # print('===')
+    # exit()
 
     return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
 
@@ -151,6 +172,12 @@ class NeighborFinder:
       np.float32)  # each entry in position (i,j) represent the timestamp of an interaction between user src_idx_l[i] and item neighbors[i,j] happening before cut_time_l[i]
     edge_idxs = np.zeros((len(source_nodes), tmp_n_neighbors)).astype(
       np.int32)  # each entry in position (i,j) represent the interaction index of an interaction between user src_idx_l[i] and item neighbors[i,j] happening before cut_time_l[i]
+
+    # print(source_nodes)
+
+    # print(max(source_nodes)) # 112
+    # print(len(self.node_to_neighbors))
+    # print('hi')
 
     for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
       source_neighbors, source_edge_idxs, source_edge_times = self.find_before(source_node,

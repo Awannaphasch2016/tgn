@@ -122,6 +122,11 @@ class GraphEmbedding(EmbeddingModule):
                                                    n_neighbors=n_neighbors)
 
       effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
+
+      # print(neighbor_embeddings.shape)
+      # print(len(source_nodes), effective_n_neighbors, -1)
+      # print('nee')
+
       neighbor_embeddings = neighbor_embeddings.view(len(source_nodes), effective_n_neighbors, -1)
       edge_time_embeddings = self.time_encoder(edge_deltas_torch)
 
@@ -138,7 +143,7 @@ class GraphEmbedding(EmbeddingModule):
 
       return source_embedding
 
-  def aggregate(self, n_layers, source_node_features, source_nodes_time_embedding,
+  def agregate(self, n_layers, source_node_features, source_nodes_time_embedding,
                 neighbor_embeddings,
                 edge_time_embeddings, edge_features, mask):
     return None

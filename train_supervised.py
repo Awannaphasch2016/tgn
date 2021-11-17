@@ -11,9 +11,10 @@ import torch
 import numpy as np
 
 from model.tgn import TGN
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, MLP
+from utils.utils import get_neighbor_finder, MLP
 from utils.data_processing import compute_time_statistics, get_data_node_classification
-from evaluation.evaluation import eval_node_classification
+from evaluation.eval_node_classification import train_val_test_evalulation_node_prediction, sliding_window_evaluation_node_prediction
+from utils.data_exploration import collect_burstiness_data_over_sliding_window, collect_burstiness_time_data_over_sliding_window
 
 random.seed(0)
 np.random.seed(0)
@@ -80,8 +81,6 @@ NUM_HEADS = args.n_head
 DROP_OUT = args.drop_out
 GPU = args.gpu
 UNIFORM = args.uniform
-NEW_NODE = args.new_node
-SEQ_LEN = NUM_NEIGHBORS
 DATA = args.data
 NUM_LAYER = args.n_layer
 LEARNING_RATE = args.lr
@@ -153,109 +152,115 @@ for i in range(args.n_runs):
 
   tgn = tgn.to(device)
 
+  # num_instance = len(train_data.sources)
   num_instance = len(train_data.sources)
   num_batch = math.ceil(num_instance / BATCH_SIZE)
-  
+
+  # print(num_instance, num_batch) # 571580, 5716
+  # exit()
+
+  # print(num_instance)
+  # print(num_batch)
+  # exit()
+
   logger.debug('Num of training instances: {}'.format(num_instance))
   logger.debug('Num of batches per epoch: {}'.format(num_batch))
 
-  logger.info('Loading saved TGN model')
-  model_path = f'./saved_models/{args.prefix}-{DATA}.pth'
-  tgn.load_state_dict(torch.load(model_path))
-  tgn.eval()
-  logger.info('TGN models loaded')
-  logger.info('Start training node classification task')
+  # train_val_test_evalulation_node_prediction(
+  #   logger,
+  #   MODEL_SAVE_PATH,
+  #   tgn,
+  #   device,
+  #   num_batch,
+  #   BATCH_SIZE,
+  #   USE_MEMORY,
+  #   num_instance,
+  #   node_features,
+  #   DROP_OUT,
+  #   args,
+  #   train_data,
+  #   val_data,
+  #   test_data,
+  #   full_data,
+  #   NUM_NEIGHBORS,
+  #   results_path,
+  #   get_checkpoint_path,
+  #   DATA
+  #   )
 
+  ## use with pre-training model to substitute prediction head
   decoder = MLP(node_features.shape[1], drop=DROP_OUT)
   decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
   decoder = decoder.to(device)
   decoder_loss_criterion = torch.nn.BCELoss()
 
-  val_aucs = []
-  train_losses = []
+  criterion = torch.nn.BCELoss()
+  optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
 
-  early_stopper = EarlyStopMonitor(max_round=args.patience)
-  for epoch in range(args.n_epoch):
-    start_epoch = time.time()
-    
-    # Initialize memory of the model at each epoch
-    if USE_MEMORY:
-      tgn.memory.__init_memory__()
+  # collect_burstiness_data_over_sliding_window(
+  #   logger,
+  #   BATCH_SIZE,
+  #   args,
+  #   full_data,
+  #   results_path,
+  #   DATA,
+  #   )
 
-    tgn = tgn.eval()
-    decoder = decoder.train()
-    loss = 0
-    
-    for k in range(num_batch):
-      s_idx = k * BATCH_SIZE
-      e_idx = min(num_instance, s_idx + BATCH_SIZE)
+  # collect_burstiness_data_over_sliding_window(
+  #   logger,
+  #   BATCH_SIZE,
+  #   args,
+  #   full_data,
+  #   results_path,
+  #   DATA,
+  #   )
 
-      sources_batch = train_data.sources[s_idx: e_idx]
-      destinations_batch = train_data.destinations[s_idx: e_idx]
-      timestamps_batch = train_data.timestamps[s_idx: e_idx]
-      edge_idxs_batch = full_data.edge_idxs[s_idx: e_idx]
-      labels_batch = train_data.labels[s_idx: e_idx]
+  # sliding_window_evaluation_node_prediction(
+  #   logger,
+  #   MODEL_SAVE_PATH,
+  #   tgn,
+  #   device,
+  #   BATCH_SIZE,
+  #   USE_MEMORY,
+  #   node_features,
+  #   DROP_OUT,
+  #   args,
+  #   train_data,
+  #   val_data,
+  #   test_data,
+  #   full_data,
+  #   NUM_NEIGHBORS,
+  #   results_path,
+  #   get_checkpoint_path,
+  #   DATA,
+  #   decoder,
+  #   decoder_optimizer,
+  #   decoder_loss_criterion,
+  #   criterion,
+  #   optimizer
+  #   )
 
-      size = len(sources_batch)
-
-      decoder_optimizer.zero_grad()
-      with torch.no_grad():
-        source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
-                                                                                     destinations_batch,
-                                                                                     destinations_batch,
-                                                                                     timestamps_batch,
-                                                                                     edge_idxs_batch,
-                                                                                     NUM_NEIGHBORS)
-
-      labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
-      pred = decoder(source_embedding).sigmoid()
-      decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
-      decoder_loss.backward()
-      decoder_optimizer.step()
-      loss += decoder_loss.item()
-    train_losses.append(loss / num_batch)
-
-    val_auc = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, BATCH_SIZE,
-                                       n_neighbors=NUM_NEIGHBORS)
-    val_aucs.append(val_auc)
-
-    pickle.dump({
-      "val_aps": val_aucs,
-      "train_losses": train_losses,
-      "epoch_times": [0.0],
-      "new_nodes_val_aps": [],
-    }, open(results_path, "wb"))
-
-    logger.info(f'Epoch {epoch}: train loss: {loss / num_batch}, val auc: {val_auc}, time: {time.time() - start_epoch}')
-  
-  if args.use_validation:
-    if early_stopper.early_stop_check(val_auc):
-      logger.info('No improvement over {} epochs, stop training'.format(early_stopper.max_round))
-      break
-    else:
-      torch.save(decoder.state_dict(), get_checkpoint_path(epoch))
-
-  if args.use_validation:
-    logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
-    best_model_path = get_checkpoint_path(early_stopper.best_epoch)
-    decoder.load_state_dict(torch.load(best_model_path))
-    logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
-    decoder.eval()
-
-    test_auc = eval_node_classification(tgn, decoder, test_data, full_data.edge_idxs, BATCH_SIZE,
-                                        n_neighbors=NUM_NEIGHBORS)
-  else:
-    # If we are not using a validation set, the test performance is just the performance computed
-    # in the last epoch
-    test_auc = val_aucs[-1]
-    
-  pickle.dump({
-    "val_aps": val_aucs,
-    "test_ap": test_auc,
-    "train_losses": train_losses,
-    "epoch_times": [0.0],
-    "new_nodes_val_aps": [],
-    "new_node_test_ap": 0,
-  }, open(results_path, "wb"))
-
-  logger.info(f'test auc: {test_auc}')
+  train_val_test_evalulation_node_prediction(
+      logger,
+      MODEL_SAVE_PATH,
+      tgn,
+      device,
+      num_batch,
+      BATCH_SIZE,
+      USE_MEMORY,
+      num_instance,
+      node_features,
+      DROP_OUT,
+      args,
+      train_data,
+      val_data,
+      test_data,
+      full_data,
+      NUM_NEIGHBORS,
+      results_path,
+      get_checkpoint_path,
+      DATA,
+      decoder,
+      decoder_optimizer,
+      decoder_loss_criterion,
+    )

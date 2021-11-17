@@ -33,6 +33,18 @@ class SequenceMemoryUpdater(MemoryUpdater):
     if len(unique_node_ids) <= 0:
       return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
 
+    # # print(self.memory.get_last_update(unique_node_ids))
+    # # print(timestamps)
+    # print(timestamps.shape)
+    # print(len(unique_node_ids))
+    # print(self.memory.get_last_update(unique_node_ids).shape)
+    # print(timestamps.shape[0] - (torch.sum(self.memory.get_last_update(unique_node_ids) <= timestamps)))
+    # print(
+    #   # ((self.memory.get_last_update(unique_node_ids) <= timestamps).all().item()).nonzero(as_tuple=True)[0]
+    #   (~(self.memory.get_last_update(unique_node_ids) <= timestamps)).type(torch.uint8).nonzero(as_tuple=True)[0]
+    # )
+    # print('<<<<<<<')
+
     assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \
                                                                                      "update memory to time in the past"
 

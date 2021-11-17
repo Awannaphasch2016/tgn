@@ -241,3 +241,9 @@ dmypy.json
 .pytype/
 
 # End of https://www.toptal.com/developers/gitignore/api/pycharm,python
+/plot/
+/tmp/
+*.PNG
+/references/*
+/debug.el
+*.el

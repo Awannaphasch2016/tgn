@@ -11,8 +11,13 @@ class Data:
     self.edge_idxs = edge_idxs
     self.labels = labels
     self.n_interactions = len(sources)
-    self.unique_nodes = set(sources) | set(destinations)
+    self.unique_sources = set(sources)
+    self.unique_destinations = set(destinations)
+    self.unique_nodes = self.unique_sources | self.unique_destinations
     self.n_unique_nodes = len(self.unique_nodes)
+    self.n_unique_sources = len(self.unique_sources)
+    self.n_unique_destinations = len(self.unique_destinations)
+
 
 
 def get_data_node_classification(dataset_name, use_validation=False):
@@ -22,12 +27,12 @@ def get_data_node_classification(dataset_name, use_validation=False):
   node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
 
   val_time, test_time = list(np.quantile(graph_df.ts, [0.70, 0.85]))
-
   sources = graph_df.u.values
   destinations = graph_df.i.values
   edge_idxs = graph_df.idx.values
   labels = graph_df.label.values
   timestamps = graph_df.ts.values
+
 
   random.seed(2020)
 
@@ -48,13 +53,19 @@ def get_data_node_classification(dataset_name, use_validation=False):
 
   return full_data, node_features, edge_features, train_data, val_data, test_data
 
-
 def get_data(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
   ### Load data and train val test split
   graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
   edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
-  node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name)) 
-    
+  node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
+
+  # # ADD: randomly generate positive edges.
+  # removed_edges_ind = np.sort(random.sample(range(graph_df.shape[0]), int(0.9 * graph_df.shape[0])))
+  # graph_df = graph_df.iloc[removed_edges_ind]
+  # edge_features = edge_features[removed_edges_ind]
+  # # print(edge_features.shape)
+  # # print(graph_df.shape)
+
   if randomize_features:
     node_features = np.random.rand(node_features.shape[0], node_features.shape[1])
 
@@ -154,7 +165,7 @@ def get_data(dataset_name, different_new_nodes_between_val_and_test=False, rando
     len(new_test_node_set)))
 
   return node_features, edge_features, full_data, train_data, val_data, test_data, \
-         new_node_val_data, new_node_test_data
+         new_node_val_data, new_node_test_data, timestamps, observed_edges_mask
 
 
 def compute_time_statistics(sources, destinations, timestamps):
