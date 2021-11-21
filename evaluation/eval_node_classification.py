@@ -16,7 +16,8 @@ def accuracy(labels,  pred):
 
   return (labels == pred).sum()/labels.shape[0]
 
-def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
+# def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
+def eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
   pred_prob = np.zeros((len(data.sources), data.n_unique_labels))
   num_instance = len(data.sources)
   num_batch = math.ceil(num_instance / batch_size)
@@ -29,20 +30,12 @@ def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighb
 
       s_idx = k * batch_size
       e_idx = min(num_instance, s_idx + batch_size)
-      # print(s_idx, e_idx)
-
-      # print(edge_idxs.shape)
-      # print(data.sources.shape)
-      # print(data.destinations.shape)
-      # print(data.timestamps.shape)
-      # print(data.edge_idxs.shape)
-      # print('neeeeemaaa')
 
       sources_batch = data.sources[s_idx: e_idx]
       destinations_batch = data.destinations[s_idx: e_idx]
       timestamps_batch = data.timestamps[s_idx:e_idx]
-      edge_idxs_batch = edge_idxs[s_idx: e_idx]
-      # edge_idxs_batch = data.edge_idxs[s_idx: e_idx]
+      # edge_idxs_batch = edge_idxs[s_idx: e_idx]
+      edge_idxs_batch = data.edge_idxs[s_idx: e_idx]
 
       source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
                                                                                     destinations_batch,
@@ -137,7 +130,6 @@ def train_val_test_evalulation_node_prediction(
     # Initialize memory of the model at each epoch
     if USE_MEMORY:
       tgn.memory.__init_memory__()
-
     # tgn = tgn.eval()
 
     tgn = tgn.train()
@@ -146,8 +138,8 @@ def train_val_test_evalulation_node_prediction(
 
     for k in tqdm(list(range(num_batch))):
 
-      # if k == 3:
-      #   break
+      if k == 5:
+        break
 
       start_batch = time.time()
       # tgn = tgn.train()
@@ -195,8 +187,15 @@ def train_val_test_evalulation_node_prediction(
     train_losses.append(loss / num_batch)
 
 
-    val_auc, val_acc, cm = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, BATCH_SIZE,
+    val_auc, val_acc, cm = eval_node_classification(tgn,
+                                                    decoder,
+                                                    val_data,
+                                                    # full_data.edge_idxs,
+                                                    BATCH_SIZE,
                                        n_neighbors=NUM_NEIGHBORS)
+
+    # val_auc, val_acc, cm = eval_node_classification(tgn, decoder, val_data, val_data.edge_idxs, BATCH_SIZE,
+    #                                    n_neighbors=NUM_NEIGHBORS)
 
     val_accs.append(val_acc)
     cms.append(cm)
@@ -226,7 +225,11 @@ def train_val_test_evalulation_node_prediction(
     logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
     decoder.eval()
 
-    test_auc, test_acc, cm = eval_node_classification(tgn, decoder, test_data, full_data.edge_idxs, BATCH_SIZE,
+    test_auc, test_acc, cm = eval_node_classification(tgn,
+                                                      decoder,
+                                                      test_data,
+                                                      # full_data.edge_idxs,
+                                                      BATCH_SIZE,
                                         n_neighbors=NUM_NEIGHBORS)
 
   else:
@@ -265,13 +268,14 @@ def sliding_window_evaluation_node_prediction(
     test_data,
     full_data,
     NUM_NEIGHBORS,
+    results_path,
     get_checkpoint_path,
     DATA,
     decoder,
     decoder_optimizer,
     decoder_loss_criterion,
-    criterion,
-    optimizer
+    # criterion,
+    # optimizer
     ):
 
   num_instance = len(full_data.sources)
@@ -279,7 +283,8 @@ def sliding_window_evaluation_node_prediction(
   epoch_times = []
   total_epoch_times = []
 
-  init_train_data = math.ceil(num_instance * 0.001) # :DEBUG:
+  init_train_data = max(BATCH_SIZE, math.ceil(num_instance * 0.001)) # :DEBUG:
+  # init_train_data = math.ceil(num_instance * 0.001) # :DEBUG:
   # init_train_data = math.ceil(num_instance * 0.5)
 
   end_train_idx = None
@@ -302,9 +307,9 @@ def sliding_window_evaluation_node_prediction(
     ws_idx = ws
 
     m_loss = []
-
     # for epoch in range(NUM_EPOCH):
     for epoch in range(5):
+    # for epoch in range(100):
       logger.debug('--epoch = {}'.format(epoch))
       start_epoch = time.time()
 
@@ -314,7 +319,8 @@ def sliding_window_evaluation_node_prediction(
       if USE_MEMORY:
         tgn.memory.__init_memory__()
 
-      tgn = tgn.train()
+
+
       decoder = decoder.train()
 
       for k in range(0, num_batch, args.backprop_every):
@@ -346,17 +352,22 @@ def sliding_window_evaluation_node_prediction(
                                                                                         edge_idxs_batch,
                                                                                         NUM_NEIGHBORS)
 
-          labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
-          pred = decoder(source_embedding).sigmoid()
 
-          decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+          if train_data.n_unique_labels == 2:
+            pred = decoder(source_embedding).sigmoid()
+            labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
+            decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+          elif train_data.n_unique_labels == 4:
+            pred = decoder(source_embedding).softmax(dim=1)
+            labels_batch_torch = torch.from_numpy(labels_batch).long().to(device)
+            decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+
           loss += decoder_loss.item()
-
 
         loss /= args.backprop_every
 
         decoder_loss.backward()
-        optimizer.step()
+        decoder_optimizer.step()
         m_loss.append(decoder_loss.item())
 
         # Detach memory after 'args.backprop_every' number of batches so we don't backpropagate to
@@ -377,29 +388,39 @@ def sliding_window_evaluation_node_prediction(
         # validation on unseen nodes
         train_memory_backup = tgn.memory.backup_memory()
 
-      VAL_BATCH_SIZE = BATCH_SIZE * 1
+      VAL_BATCH_SIZE = BATCH_SIZE * 10
 
-      # val_mask = full_data.timestamps < full_data.timestamps[end_train_idx + VAL_BATCH_SIZE]
-      # val_data = Data(full_data.sources[val_mask],
-      #                 full_data.destinations[val_mask],
-      #                 full_data.timestamps[val_mask],
-      #                 full_data.edge_idxs[val_mask],
-      #                 full_data.labels[val_mask],
-      #                 )
+      # :DEBUG:
+      time_before_end_of_next_batch = full_data.timestamps <= full_data.timestamps[end_train_idx + VAL_BATCH_SIZE]
+      time_after_end_of_current_batch = full_data.timestamps > full_data.timestamps[end_train_idx]
+      val_mask = np.logical_and(time_before_end_of_next_batch, time_after_end_of_current_batch)
+      val_data = Data(full_data.sources[val_mask],
+                      full_data.destinations[val_mask],
+                      full_data.timestamps[val_mask],
+                      full_data.edge_idxs[val_mask],
+                      full_data.labels[val_mask],
+                      )
 
-      sources_batch = full_data.sources[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
-      destinations_batch  = full_data.destinations[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
-      timestamps_batch  = full_data.timestamps[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
-      edge_idxs_batch  = full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
-      labels_idxs_batch  = full_data.labels[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
+      assert val_mask.sum() == VAL_BATCH_SIZE, "size of validation set must be the same as batch size."
+
 
       tgn.eval()
-      decoder.eval()
-      val_auc = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, VAL_BATCH_SIZE,
+      decoder.eval(
+)
+      val_auc = eval_node_classification(tgn,
+                                         decoder,
+                                         val_data,
+                                         # full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE],
+                                         # full_data.edge_idxs,
+                                         # val_data.edge_idxs,
+                                         VAL_BATCH_SIZE,
                                         n_neighbors=NUM_NEIGHBORS)
-      # val_auc = eval_node_classification(tgn, decoder, val_data, full_data.edge_idxs, BATCH_SIZE,
-      #                                   n_neighbors=NUM_NEIGHBORS)
 
+      # sources_batch = full_data.sources[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
+      # destinations_batch  = full_data.destinations[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
+      # timestamps_batch  = full_data.timestamps[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
+      # edge_idxs_batch  = full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
+      # labels_idxs_batch  = full_data.labels[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
       # source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
       #                                                                              destinations_batch,
       #                                                                              destinations_batch,

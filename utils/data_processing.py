@@ -10,7 +10,8 @@ class Data:
     self.timestamps = timestamps
     self.edge_idxs = edge_idxs
     self.labels = labels.astype(int)
-    self.n_unique_labels = np.unique(self.labels).shape[0]
+    # self.n_unique_labels = np.unique(self.labels).shape[0]
+    self.n_unique_labels = 4 # :DEBUG:
     self.n_interactions = len(sources)
     self.unique_sources = set(sources)
     self.unique_destinations = set(destinations)

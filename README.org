@@ -1,12 +1,106 @@
 #+TITLE: Readme
 
 * todo list
-** Roadmap [0/1]
-- [-] run script on HPC cluster.
-
+** Roadmap [0/3]
+- [ ] run script on HPC cluster.
+  - test how much faster it run.
+    - extract time from log files, then analyze it
+- [-] create yaml file to keep track of parameters (help with git commit log)
+  - validate and test. make sure that the goal is to use yaml (to help with self-documenetation via commit) while no changes to command line arguments needs to be changed
+- [ ] implement sliding window node classitions
+*** expectation
 ** Refine + Refactors [1/5]
 - [ ] create AUC for multilabel classes (seem too cumbersome)
 - [ ] implement early stopper that use accuracy value as a fall back when auc is none(good approach)
 - [X] create accuracy for multilabel classes.
 - [ ] reduce chromatic complexity by removing condition [[file:evaluation/eval_node_classification.py::if data.n_unique_labels == 2:][number of labels based condition.]]
-- [ ] create yaml file to keep track of parameters (help with git commit log)
+
+* Debugging Logs
+** Debugging Log 1: I tried to produce result for =sliding_window_evaluation_node_prediction=, but I passed validation data to =eval_node_classification= incorrectly
+*** +PROBLEM_STATEMENT: performance should change over epoch. (given that training and test data are the same.)+
+**** PROBLEM_STATEMENT: from [[file:evaluation/eval_node_classification.py::val_auc = eval_node_classification(tgn,][here]], val_data,full_data.edge_idx should reflect the change when ws increase.
+***** PROBLEM_STATEMENT: changes of =data.sources= ([[file:evaluation/eval_node_classification.py::num_instance = len(data.sources)][here]]) values seem to cause, data from the past to be updated. (see error [[file:model/tgn.py::assert (source_time_delta >= 0).all().item(), 'last timestamp in which the target node was updated occured before the current timestemp.'][here]])
+****** OBSERVATION: =self.get_raw_message= is working fine when it is called the first time (pass in source_nodes), but the error is raised when it is called the second time (pass in destination_nodes), see [[file:model/tgn.py::unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,][here]].
+******* OBSEVATION: =edge_times= are not aligned with =source_nodes= (which is passed from =destination_nodes=) is wrong, see [[file:model/tgn.py::source_time_delta = edge_times - self.memory.last_update[source_nodes]][here]].
+******** OBASEVATION: =destination_time_diffs= ([[file:model/tgn.py::destination_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[][here]]) should have the same output as =source_time_delta= ([[file:model/tgn.py::source_time_delta = edge_times - self.memory.last_update[source_nodes]][here]]).
+******** +OBSERVATION: all element in =time_diff= are less than or equal to 0, see [[file:model/tgn.py::time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],][here]].+ (time_diff only uses when [[file:modules/embedding_module.py::class TimeEmbedding(EmbeddingModule):][TimeEmbedding]] is used which in this case is not used.)
+******** OBSERVATION: =sources_nodes= arg are =edge_idx= are passed to =get_raw_message= from =eval_node_classification= without any modification.
+********* =destination_nodes= are passed in as argument twice as =destination_nodes= and =negative_nodes=, see [[file:evaluation/eval_node_classification.py::source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,][here]].
+******** PROBLEM STATEMENT: maybe how =destination_nodes= and =source_nodes= interact with =self.memory.last_update= cause the problem, see [[file:model/tgn.py::source_time_delta = edge_times - self.memory.last_update[source_nodes]][here]].
+********* OBSERVATION: I have validated that order and set of destinations and sources are passed in correectly. This indicate to me that [[file:model/tgn.py::def get_updated_memory(self, nodes, messages):][get_updatd_memory]] function incorrectly which was called [[file:model/tgn.py::memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),][here]].
+********** OBSERVATION: =get_updated_memory= function called =self.message_aggregator.aggregate()=, =message_function.compute_message()= ,and =memory_updater.get_updated_memory()=, see [[file:model/tgn.py::self.message_aggregator.aggregate(][here]].
+*********** OBSERVATION: I found that =aggregate= method from LastMessageAggreagte class, aggregate information by =keep only the last message for each node=, hence, for each unique nodes, it returns =unique_timestamps= which is time stamp that the node last appear, see [[file:modules/message_aggregator.py::def aggregate(self, node_ids, messages):][here]].
+************ PROBLEM STATMENT: Since =LastMessageAggregate= performs as it should, did I pass =edge_time= to =get_raw_message= incorrectly? see [[file:model/tgn.py::source_time_delta = edge_times - self.memory.last_update[source_nodes]][here]] and [[file:evaluation/eval_node_classification.py::timestamps_batch = data.timestamps[s_idx:e_idx]][here]].
+************* HYPOTHESIS: I think I should pass in =edge_time= based on =MessageAggregation= algorithm that I use.
+************* HERE GATHERING: figure out why =train_val_test_evalulation_node_prediction= doesn't raise the same error as =sliding_window_evaluation_node_prediction= when they both share the same [[file:evaluation/eval_node_classification.py::def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):][methods]].
+
+output of  =/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/log/debuggins/debug_sliding_window_evaluation_node_prediction.txt= is shown below
+#+begin_src md
+
+edge_times = tensor([  0.0000,   6.3200,   7.0260,  13.5990,  16.8110,  18.0430,  19.5500,
+            27.4760,  28.9500,  37.6900,  38.8640,  40.4050,  41.3370,  45.7020,
+            48.0040,  50.5550,  65.1320,  77.3590,  78.6940,  84.6210,  91.9350,
+            94.2210, 103.2250, 105.6400, 111.2550, 113.5230, 114.4690, 115.4350,
+        122.6710, 158.3840, 164.3470, 167.9980, 177.5610, 178.4290, 184.6920,
+        195.2590, 198.4860, 200.7150, 201.3440, 212.1650, 218.1170, 220.2800,
+        223.0630, 231.2680, 232.3900, 240.4610, 246.1460, 250.6170, 250.6810,
+        251.8030, 268.2800, 270.7980, 277.1740, 281.7960, 285.3230, 287.2900,
+        292.3790, 292.9950, 294.1000, 299.7650, 299.9340, 302.5100, 302.5710,
+        309.7950, 313.9610, 316.8810, 321.6440, 328.4020, 329.1940, 333.2640,
+        335.4580, 339.8800, 341.0650, 346.2390, 349.2730, 352.3780, 357.2150,
+        358.1630, 363.1480, 368.6770, 371.7540, 372.0800, 374.4750, 377.7500,
+        399.9320, 402.7520, 411.8980, 419.6570, 424.3140, 425.2860, 429.6970,
+        430.5970, 439.9000, 442.3190, 445.3310, 445.3450, 445.5450, 448.9390,
+        453.2460, 454.6860]), last_memory = tensor([  0.0000,   6.3200,   7.0260,  13.5990,  16.8110,  18.0430,  19.5500,
+            27.4760,  28.9500, 363.1480,  38.8640,  40.4050,  41.3370, 442.3190,
+            48.0040,  50.5550,  65.1320,  77.3590,  78.6940,  84.6210,  91.9350,
+            94.2210, 103.2250, 105.6400, 111.2550, 113.5230, 114.4690, 115.4350,
+        122.6710, 158.3840, 164.3470, 167.9980, 177.5610, 178.4290, 184.6920,
+        195.2590, 198.4860, 200.7150, 201.3440, 212.1650, 218.1170, 220.2800,
+        223.0630, 425.2860, 232.3900, 240.4610, 246.1460, 250.6170, 358.1630,
+        251.8030, 313.9610, 270.7980, 277.1740, 281.7960, 402.7520, 287.2900,
+        292.3790, 292.9950, 294.1000, 299.7650, 299.9340, 302.5100, 302.5710,
+        309.7950, 313.9610, 316.8810, 321.6440, 328.4020, 329.1940, 374.4750,
+        335.4580, 445.5450, 341.0650, 346.2390, 349.2730, 352.3780, 357.2150,
+        358.1630, 363.1480, 368.6770, 371.7540, 372.0800, 374.4750, 377.7500,
+        399.9320, 402.7520, 411.8980, 419.6570, 424.3140, 425.2860, 429.6970,
+        430.5970, 439.9000, 442.3190, 445.3310, 445.3450, 445.5450, 448.9390,
+        453.2460, 454.6860])
+#+end_src
+
+output of   =/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/log/debuggins/debug_train_val_test_evaluation_node_prediction.txt= is shown below
+#+begin_src md
+edge_times = tensor([457.8660, 467.3290, 475.0020, 479.2750, 482.7310, 484.9190, 492.7570,
+        493.7460, 493.8010, 494.8970, 498.1050, 511.7000, 512.0040, 512.1220,
+        520.9210, 522.1490, 526.9120, 528.0160, 531.3350, 537.0120, 538.5760,
+        539.4590, 540.5780, 556.4290, 560.3290, 565.6350, 565.6460, 567.4010,
+        571.8510, 571.8610, 572.2790, 575.1810, 580.1240, 587.9130, 590.8160,
+        592.2080, 598.5390, 603.6610, 607.3730, 611.6500, 625.5290, 626.1740,
+        642.3530, 645.2910, 646.8470, 647.1100, 650.2760, 651.0340, 657.3200,
+        657.7390, 667.4670, 678.7090, 695.3410, 697.9100, 703.6000, 706.4260,
+        719.4550, 722.6740, 725.4420, 727.6590, 733.3160, 739.4400, 755.4780,
+        755.7690, 755.9650, 764.2920, 769.1720, 779.3550, 780.6990, 781.8230,
+        787.0660, 792.9910, 794.5880, 795.0910, 800.7740, 811.1130, 814.8190,
+        815.7510, 818.7270, 819.7330, 820.1270, 820.2020, 824.7100, 825.6410,
+        825.9610, 831.5890, 832.3440, 832.8130, 833.8730, 834.0020, 834.7900,
+        835.7750, 835.9590, 837.6470, 840.5000, 844.8180, 846.6750, 848.8270,
+        850.4410, 856.9250]), last_memory = tensor([  0.0000, 448.9390,   0.0000,   0.0000,   0.0000,   0.0000,   6.3200,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000, 425.2860,
+        0.0000,   0.0000,   0.0000,   0.0000, 402.7520, 429.6970,   0.0000,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000, 425.2860,   0.0000,
+        377.7500,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000, 425.2860,   0.0000,   0.0000, 115.4350,   0.0000,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000, 424.3140,   0.0000,
+        0.0000,   0.0000,   0.0000, 425.2860,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000, 402.7520,   0.0000,   0.0000, 377.7500,   0.0000,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000, 309.7950,   0.0000,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000,   0.0000, 425.2860,   0.0000,   0.0000,   0.0000,
+        0.0000,   0.0000])
+#+end_src
+*********** OBSERVATION: this assert claims to prevent nodes from "update information to time in the past", see [[file:modules/memory_updater.py::assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \][here]]. (how is this different from the main assertion that cause the error?)
+************ GATHERING_INFO:
+************* did syntax for trianing tgn and decoder correct? see [[file:evaluation/eval_node_classification.py::tgn.eval()][here]].
+************* data that is passed in to eval_node_clssifcation

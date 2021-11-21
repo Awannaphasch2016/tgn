@@ -153,10 +153,6 @@ class TGN(torch.nn.Module):
       time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
                              dim=0)
 
-      # print(edge_times)
-      # print(last_update[source_nodes])
-      # print('meme')
-
     # Compute the embeddings using the embedding module
     node_embedding = self.embedding_module.compute_embedding(memory=memory,
 
@@ -279,12 +275,18 @@ class TGN(torch.nn.Module):
     destination_memory = self.memory.get_memory(destination_nodes) if \
       not self.use_destination_embedding_in_message else destination_node_embedding
 
-    source_time_delta = edge_times - self.memory.last_update[source_nodes]
+    last_memory = self.memory.last_update[source_nodes]
+
+    source_time_delta = edge_times - last_memory
     source_time_delta_encoding = self.time_encoder(source_time_delta.unsqueeze(dim=1)).view(len(
       source_nodes), -1)
 
     if not (source_time_delta >= 0).all().item():
       print(source_time_delta)
+
+    assert edge_times.tolist()  == sorted(edge_times.tolist()), "edge_times is not sorted."
+    # assert last_memory.tolist() == sorted(last_memory.tolist()), "last_memory is not sorted."
+    # assert edge_times  == sorted(edge_times), "edge_times are not sorted."
 
     assert (source_time_delta >= 0).all().item(), 'last timestamp in which the target node was updated occured before the current timestemp.'
 
