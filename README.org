@@ -7,9 +7,16 @@
     - extract time from log files, then analyze it
 - [-] create yaml file to keep track of parameters (help with git commit log)
   - validate and test. make sure that the goal is to use yaml (to help with self-documenetation via commit) while no changes to command line arguments needs to be changed
-- [ ] implement sliding window node classitions
+- [-] implement sliding window node classitions
+  Implements node classification as semi-supervised learning tasks.
+  I have two options, see here for picture of my discussion with dr zhu on <2021-11-22 Mon>.
+  - [-] budget = 10 percent of unique nodes on each windows
+  - [ ] fixed node to be 20 nodes on each windows.
+
 *** expectation
-** Refine + Refactors [1/5]
+** Refine + Refactors [1/7]
+- [ ] incrementally add useful tests.
+- [-] writing research log about this email, see [[https://mail.google.com/mail/u/0/#inbox/FMfcgzGllCbFZTxRGLKkXrqWPZQMMtTg][here]].
 - [ ] create AUC for multilabel classes (seem too cumbersome)
 - [ ] implement early stopper that use accuracy value as a fall back when auc is none(good approach)
 - [X] create accuracy for multilabel classes.

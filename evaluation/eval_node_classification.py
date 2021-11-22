@@ -65,7 +65,7 @@ def eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
 
   auc_roc = None
   acc = accuracy(data.labels, pred)
-  cm = confusion_matrix(data.labels, pred, labels=np.unique(data.labels))
+  cm = confusion_matrix(data.labels, pred, labels=list(range(data.n_unique_labels)))
   if data.n_unique_labels == 2:
     try:
       auc_roc = roc_auc_score(data.labels, pred_prob)
@@ -274,8 +274,7 @@ def sliding_window_evaluation_node_prediction(
     decoder,
     decoder_optimizer,
     decoder_loss_criterion,
-    # criterion,
-    # optimizer
+    NUM_EPOCH
     ):
 
   num_instance = len(full_data.sources)
@@ -307,8 +306,8 @@ def sliding_window_evaluation_node_prediction(
     ws_idx = ws
 
     m_loss = []
-    # for epoch in range(NUM_EPOCH):
-    for epoch in range(5):
+    for epoch in range(NUM_EPOCH):
+    # for epoch in range(5):
     # for epoch in range(100):
       logger.debug('--epoch = {}'.format(epoch))
       start_epoch = time.time()
@@ -388,7 +387,7 @@ def sliding_window_evaluation_node_prediction(
         # validation on unseen nodes
         train_memory_backup = tgn.memory.backup_memory()
 
-      VAL_BATCH_SIZE = BATCH_SIZE * 10
+      VAL_BATCH_SIZE = BATCH_SIZE * 1
 
       # :DEBUG:
       time_before_end_of_next_batch = full_data.timestamps <= full_data.timestamps[end_train_idx + VAL_BATCH_SIZE]
@@ -449,7 +448,7 @@ def sliding_window_evaluation_node_prediction(
     # left_num_batch -= 1
     # init_num_batch += 1
     init_num_ws += 1
-    # init_train_data = init_num_batch * BATCH_SIZE
+
     init_train_data = init_num_ws * num_instances_shift
 
     # Training has finished, we have loaded the best model, and we want to backup its current

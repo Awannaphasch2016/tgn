@@ -242,6 +242,7 @@ for i in range(args.n_runs):
     decoder,
     decoder_optimizer,
     decoder_loss_criterion,
+    NUM_EPOCH
     )
 
   # train_val_test_evalulation_node_prediction(
