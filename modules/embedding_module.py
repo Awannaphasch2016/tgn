@@ -123,10 +123,6 @@ class GraphEmbedding(EmbeddingModule):
 
       effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
 
-      # print(neighbor_embeddings.shape)
-      # print(len(source_nodes), effective_n_neighbors, -1)
-      # print('nee')
-
       neighbor_embeddings = neighbor_embeddings.view(len(source_nodes), effective_n_neighbors, -1)
       edge_time_embeddings = self.time_encoder(edge_deltas_torch)
 

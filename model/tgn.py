@@ -172,9 +172,8 @@ class TGN(torch.nn.Module):
         # new messages for them)
 
         self.update_memory(positives, self.memory.messages)
-
         assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), \
-          "Something wrong in how the memory was updated, " # :DEBUG:
+          "Something wrong in how the memory was updated, "
 
         # Remove messages for the positives since we have already updated the memory using them
         self.memory.clear_messages(positives)
@@ -238,12 +237,6 @@ class TGN(torch.nn.Module):
 
     if len(unique_nodes) > 0:
       unique_messages = self.message_function.compute_message(unique_messages)
-
-    # if len(unique_timestamps) > 0:
-    #   print(max(unique_timestamps))
-    # if len(unique_nodes) > 0:
-    #   print(max(unique_nodes))
-    # print('ramehnaa')
 
     # Update the memory with the aggregated messages
     self.memory_updater.update_memory(unique_nodes, unique_messages,

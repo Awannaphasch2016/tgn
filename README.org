@@ -39,7 +39,7 @@
 *********** OBSERVATION: I found that =aggregate= method from LastMessageAggreagte class, aggregate information by =keep only the last message for each node=, hence, for each unique nodes, it returns =unique_timestamps= which is time stamp that the node last appear, see [[file:modules/message_aggregator.py::def aggregate(self, node_ids, messages):][here]].
 ************ PROBLEM STATMENT: Since =LastMessageAggregate= performs as it should, did I pass =edge_time= to =get_raw_message= incorrectly? see [[file:model/tgn.py::source_time_delta = edge_times - self.memory.last_update[source_nodes]][here]] and [[file:evaluation/eval_node_classification.py::timestamps_batch = data.timestamps[s_idx:e_idx]][here]].
 ************* HYPOTHESIS: I think I should pass in =edge_time= based on =MessageAggregation= algorithm that I use.
-************* HERE GATHERING: figure out why =train_val_test_evalulation_node_prediction= doesn't raise the same error as =sliding_window_evaluation_node_prediction= when they both share the same [[file:evaluation/eval_node_classification.py::def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):][methods]].
+************* GATHERING: figure out why =train_val_test_evalulation_node_prediction= doesn't raise the same error as =sliding_window_evaluation_node_prediction= when they both share the same [[file:evaluation/eval_node_classification.py::def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):][methods]].
 
 output of  =/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/log/debuggins/debug_sliding_window_evaluation_node_prediction.txt= is shown below
 #+begin_src md
@@ -107,6 +107,8 @@ edge_times = tensor([457.8660, 467.3290, 475.0020, 479.2750, 482.7310, 484.9190,
         0.0000,   0.0000,   0.0000, 425.2860,   0.0000,   0.0000,   0.0000,
         0.0000,   0.0000])
 #+end_src
+************** PROBLEM_STATEMENT: from investigation, I found that =LastMessageAggreagte= update =unique_timestamps= incorrectly by assigned value from =messages[node_id][-1][1]=, see [[file:modules/message_aggregator.py::unique_timestamps.append(messages\[node_id\]\[-1\]\[1\])][here]].
+
 *********** OBSERVATION: this assert claims to prevent nodes from "update information to time in the past", see [[file:modules/memory_updater.py::assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \][here]]. (how is this different from the main assertion that cause the error?)
 ************ GATHERING_INFO:
 ************* did syntax for trianing tgn and decoder correct? see [[file:evaluation/eval_node_classification.py::tgn.eval()][here]].

@@ -390,22 +390,19 @@ def sliding_window_evaluation_node_prediction(
       VAL_BATCH_SIZE = BATCH_SIZE * 1
 
       # :DEBUG:
-      time_before_end_of_next_batch = full_data.timestamps <= full_data.timestamps[end_train_idx + VAL_BATCH_SIZE]
-      time_after_end_of_current_batch = full_data.timestamps > full_data.timestamps[end_train_idx]
-      val_mask = np.logical_and(time_before_end_of_next_batch, time_after_end_of_current_batch)
+      time_before_end_of_current_batch = full_data.timestamps <= full_data.timestamps[end_train_idx]
+      val_mask = time_before_end_of_current_batch
       val_data = Data(full_data.sources[val_mask],
                       full_data.destinations[val_mask],
                       full_data.timestamps[val_mask],
                       full_data.edge_idxs[val_mask],
                       full_data.labels[val_mask],
                       )
-
-      assert val_mask.sum() == VAL_BATCH_SIZE, "size of validation set must be the same as batch size."
+      # assert val_mask.sum() == VAL_BATCH_SIZE, "size of validation set must be the same as batch size."
 
 
       tgn.eval()
-      decoder.eval(
-)
+      decoder.eval()
       val_auc = eval_node_classification(tgn,
                                          decoder,
                                          val_data,
