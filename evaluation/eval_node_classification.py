@@ -16,6 +16,109 @@ def accuracy(labels,  pred):
 
   return (labels == pred).sum()/labels.shape[0]
 
+def my_eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
+  pred_prob = np.zeros((len(data.sources), data.n_unique_labels))
+  num_instance = len(data.sources)
+  num_batch = math.ceil(num_instance / batch_size)
+  # print(num_instance, num_batch)  # 672 7
+
+  with torch.no_grad():
+    decoder.eval()
+    tgn.eval()
+    for k in range(num_batch):
+      # print(k)
+      s_idx = k * batch_size
+      e_idx = min(num_instance, s_idx + batch_size)
+
+      sources_batch = data.sources[s_idx: e_idx]
+      destinations_batch = data.destinations[s_idx: e_idx]
+      timestamps_batch = data.timestamps[s_idx:e_idx]
+      # edge_idxs_batch = edge_idxs[s_idx: e_idx]
+      edge_idxs_batch = data.edge_idxs[s_idx: e_idx]
+
+      # source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
+      #                                                                               destinations_batch,
+      #                                                                               destinations_batch,
+      #                                                                               timestamps_batch,
+      #                                                                               edge_idxs_batch)
+
+      self = tgn
+      source_nodes = sources_batch
+      destination_nodes = destinations_batch
+      negative_nodes = destinations_batch
+      edge_times = timestamps_batch
+      edge_idxs = edge_idxs_batch
+      n_neighbors = 20
+
+      n_samples = len(source_nodes)
+      nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
+      positives = np.concatenate([source_nodes, destination_nodes])
+      timestamps = np.concatenate([edge_times, edge_times, edge_times])
+
+      memory = self.memory.get_memory(list(range(self.n_nodes)))
+      last_update = self.memory.last_update
+
+      ### Compute differences between the time the memory of a node was last updated,
+      ### and the time for which we want to compute the embedding of a node
+      source_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
+        source_nodes].long()
+      source_time_diffs = (source_time_diffs - self.mean_time_shift_src) / self.std_time_shift_src
+      destination_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
+        destination_nodes].long()
+      destination_time_diffs = (destination_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
+      negative_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
+        negative_nodes].long()
+      negative_time_diffs = (negative_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
+
+      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
+                             dim=0)
+      # Compute the embeddings using the embedding module
+      node_embedding = self.embedding_module.compute_embedding(memory=memory,
+
+                                                               source_nodes=nodes,
+                                                               timestamps=timestamps,
+                                                               n_layers=self.n_layers,
+                                                               n_neighbors=n_neighbors,
+                                                               time_diffs=time_diffs)
+
+      source_node_embedding = node_embedding[:n_samples]
+      destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
+      negative_node_embedding = node_embedding[2 * n_samples:]
+
+      source_embedding = source_node_embedding
+
+      if data.n_unique_labels == 2:
+        # source_embedding.shape = (100, 172)
+        pred_prob_batch = decoder(source_embedding).sigmoid()
+        pred_prob[s_idx: e_idx, : ] = pred_prob_batch.cpu().numpy()
+        pred_prob = pred_prob.reshape(-1)
+      elif data.n_unique_labels == 4:
+        pred_prob_batch = decoder(source_embedding).softmax(dim=1)
+        pred_prob[s_idx: e_idx, :] = pred_prob_batch.cpu().numpy()
+      else:
+        raise NotImplementedError
+
+
+  if pred_prob.reshape(-1).shape[0] == pred_prob.shape[0]:
+    pred = pred_prob > 0.5
+  else:
+    pred = pred_prob.argmax(axis=1)
+
+  # pred_prob.shape = (1000867, )
+  # data.labels.shape = (1000867, )
+
+  auc_roc = None
+  acc = accuracy(data.labels, pred)
+  cm = confusion_matrix(data.labels, pred, labels=list(range(data.n_unique_labels)))
+  if data.n_unique_labels == 2:
+    try:
+      auc_roc = roc_auc_score(data.labels, pred_prob)
+    except:
+      raise Exception("Something is wrong.")
+
+  return auc_roc, acc, cm
+
+
 # def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
 def eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
   pred_prob = np.zeros((len(data.sources), data.n_unique_labels))
@@ -27,7 +130,7 @@ def eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
     decoder.eval()
     tgn.eval()
     for k in range(num_batch):
-
+      print(k)
       s_idx = k * batch_size
       e_idx = min(num_instance, s_idx + batch_size)
 
@@ -70,7 +173,7 @@ def eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
     try:
       auc_roc = roc_auc_score(data.labels, pred_prob)
     except:
-      raise "Something is wrong."
+      raise Exception("Something is wrong.")
 
   return auc_roc, acc, cm
 
@@ -137,8 +240,8 @@ def train_val_test_evalulation_node_prediction(
     loss = 0
 
     for k in tqdm(list(range(num_batch))):
-
-      if k == 5:
+      print(f'list(range(num_batch)) = {k}')
+      if k == 2:
         break
 
       start_batch = time.time()
@@ -184,18 +287,24 @@ def train_val_test_evalulation_node_prediction(
       # logger.info(f'batch {k}/{num_batch}: train loss: {loss_batch}, time: {time.time() - start_batch}')
       loss += loss_batch
 
+
     train_losses.append(loss / num_batch)
 
-
-    val_auc, val_acc, cm = eval_node_classification(tgn,
+    # :DEBUG:
+    val_auc, val_acc, cm = my_eval_node_classification(tgn,
                                                     decoder,
                                                     val_data,
                                                     # full_data.edge_idxs,
                                                     BATCH_SIZE,
                                        n_neighbors=NUM_NEIGHBORS)
 
-    # val_auc, val_acc, cm = eval_node_classification(tgn, decoder, val_data, val_data.edge_idxs, BATCH_SIZE,
+    # val_auc, val_acc, cm = eval_node_classification(tgn,
+    #                                                 decoder,
+    #                                                 val_data,
+    #                                                 # full_data.edge_idxs,
+    #                                                 BATCH_SIZE,
     #                                    n_neighbors=NUM_NEIGHBORS)
+
 
     val_accs.append(val_acc)
     cms.append(cm)
@@ -312,7 +421,7 @@ def sliding_window_evaluation_node_prediction(
       logger.debug('--epoch = {}'.format(epoch))
       start_epoch = time.time()
 
-      ### Training
+      ### Training　
 
       # Reinitialize memory of the model at the start of each epoch
       if USE_MEMORY:
@@ -403,7 +512,7 @@ def sliding_window_evaluation_node_prediction(
 
       tgn.eval()
       decoder.eval()
-      val_auc = eval_node_classification(tgn,
+      val_auc = my_eval_node_classification(tgn,
                                          decoder,
                                          val_data,
                                          # full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE],

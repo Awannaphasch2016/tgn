@@ -22,6 +22,10 @@ class SequenceMemoryUpdater(MemoryUpdater):
     assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \
                                                                                      "update memory to time in the past"
 
+    # import numpy as np
+    # u_node_ids = np.array(unique_node_ids)
+    # ind = u_node_ids[u_node_ids == 13]
+    # print(u_node_ids[ind], timestamps[ind])
     memory = self.memory.get_memory(unique_node_ids)
     self.memory.last_update[unique_node_ids] = timestamps
 

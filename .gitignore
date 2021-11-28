@@ -248,3 +248,6 @@ dmypy.json
 /debug.el
 *.el
 /'
+hotkey.txt
+todo.txt
+.idea/*

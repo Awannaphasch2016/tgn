@@ -114,12 +114,6 @@ class TGN(torch.nn.Module):
     :return: Temporal embeddings for sources, destinations and negatives
     """
 
-    # print(np.max(source_nodes))
-    # print(np.max(destination_nodes))
-    # print(np.max(negative_nodes))
-    # print('compute_temporal_embeddings')
-    # exit()
-
     n_samples = len(source_nodes)
     nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
     positives = np.concatenate([source_nodes, destination_nodes])
@@ -170,13 +164,13 @@ class TGN(torch.nn.Module):
       if self.memory_update_at_start:
         # Persist the updates to the memory only for sources and destinations (since now we have
         # new messages for them)
-
         self.update_memory(positives, self.memory.messages)
         assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), \
           "Something wrong in how the memory was updated, "
 
         # Remove messages for the positives since we have already updated the memory using them
         self.memory.clear_messages(positives)
+
 
       unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes,
                                                                     source_node_embedding,
@@ -188,8 +182,11 @@ class TGN(torch.nn.Module):
                                                                               source_nodes,
                                                                               source_node_embedding,
                                                                               edge_times, edge_idxs)
+
       if self.memory_update_at_start:
         self.memory.store_raw_messages(unique_sources, source_id_to_messages)
+        print(self.get_updated_memory(list(range(self.n_nodes)),
+                                      self.memory.messages)[1][14])
         self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
       else:
         self.update_memory(unique_sources, source_id_to_messages)
@@ -199,6 +196,8 @@ class TGN(torch.nn.Module):
         source_node_embedding = memory[source_nodes]
         destination_node_embedding = memory[destination_nodes]
         negative_node_embedding = memory[negative_nodes]
+
+
 
     return source_node_embedding, destination_node_embedding, negative_node_embedding
 
@@ -237,6 +236,8 @@ class TGN(torch.nn.Module):
 
     if len(unique_nodes) > 0:
       unique_messages = self.message_function.compute_message(unique_messages)
+
+    # print(unique_timestamps)
 
     # Update the memory with the aggregated messages
     self.memory_updater.update_memory(unique_nodes, unique_messages,
