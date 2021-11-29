@@ -7,21 +7,21 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
+from random import choices
 
 def accuracy(labels,  pred):
 
   return (labels == pred).sum()/labels.shape[0]
 
-def my_eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
+def my_eval_node_classification(logger, tgn, decoder, data, batch_size, label_sources_in_training, n_neighbors):
   pred_prob = np.zeros((len(data.sources), data.n_unique_labels))
   num_instance = len(data.sources)
   num_batch = math.ceil(num_instance / batch_size)
-  # print(num_instance, num_batch)  # 672 7
-
+  all_selected_sources_ind = []
   with torch.no_grad():
     decoder.eval()
     tgn.eval()
@@ -87,30 +87,38 @@ def my_eval_node_classification(tgn, decoder, data, batch_size, n_neighbors):
 
       source_embedding = source_node_embedding
 
+      label_sources_in_test = np.setdiff1d(source_nodes, label_sources_in_training)
+      selected_sources_ind = find_nodes_ind_to_be_labelled(label_sources_in_test, source_nodes)
+      all_selected_sources_ind.extend(np.array(selected_sources_ind) + s_idx) # selected ind uses s_idx as a starting ind.
       if data.n_unique_labels == 2:
+        raise NotImplementedError
         # source_embedding.shape = (100, 172)
         pred_prob_batch = decoder(source_embedding).sigmoid()
         pred_prob[s_idx: e_idx, : ] = pred_prob_batch.cpu().numpy()
         pred_prob = pred_prob.reshape(-1)
       elif data.n_unique_labels == 4:
-        pred_prob_batch = decoder(source_embedding).softmax(dim=1)
-        pred_prob[s_idx: e_idx, :] = pred_prob_batch.cpu().numpy()
+        pred_prob_batch = decoder(source_embedding[selected_sources_ind]).softmax(dim=1)
+        pred_prob[selected_sources_ind, :] = pred_prob_batch.cpu().detach().numpy() #　:BUG: random bug. haven't spend time to figure the cause.
       else:
         raise NotImplementedError
 
+  pred = pred_prob_to_pred_labels(pred_prob, all_selected_sources_ind)
 
-  if pred_prob.reshape(-1).shape[0] == pred_prob.shape[0]:
-    pred = pred_prob > 0.5
-  else:
-    pred = pred_prob.argmax(axis=1)
+  # if pred_prob.reshape(-1).shape[0] == pred_prob.shape[0]:
+  #   raise NotImplementedError
+  #   pred = pred_prob > 0.5
+  # else:
+  #   pred = pred_prob[all_selected_sources_ind].argmax(axis=1)
 
-  # pred_prob.shape = (1000867, )
-  # data.labels.shape = (1000867, )
-
+  logger.info(
+    f"test labels distribution = {get_label_distribution(data.labels[all_selected_sources_ind])}")
+  logger.info(
+    f"predicted test labels distribution = {get_label_distribution(pred)}")
   auc_roc = None
-  acc = accuracy(data.labels, pred)
-  cm = confusion_matrix(data.labels, pred, labels=list(range(data.n_unique_labels)))
+  acc = accuracy(data.labels[all_selected_sources_ind], pred)
+  cm = confusion_matrix(data.labels[all_selected_sources_ind], pred, labels=list(range(data.n_unique_labels)))
   if data.n_unique_labels == 2:
+    raise NotImplementedError
     try:
       auc_roc = roc_auc_score(data.labels, pred_prob)
     except:
@@ -404,20 +412,27 @@ def sliding_window_evaluation_node_prediction(
   init_num_ws = math.ceil((init_train_data)/num_instances_shift) #6
   left_num_ws = total_num_ws - init_num_ws
 
-  # print(total_num_ws, init_num_ws, left_num_ws) #  5716, 6, 5710
-  # print(init_train_data, num_instances_shift) # 572, 100
+  fixed_begin_ws_idx = 0 # always stay 0
+  begin_ws_idx = 0 # pointer for first index of previously added window
+  end_ws_idx = init_train_data # pointer for last index of previously added window
+
+  selected_sources_to_label = []
 
   for ws in range(left_num_ws):
 
-    num_batch = math.ceil((init_train_data)/BATCH_SIZE)
+    num_batch = math.ceil((end_ws_idx)/BATCH_SIZE)
 
     logger.debug('-ws = {}'.format(ws))
     ws_idx = ws
 
     m_loss = []
+
+    selected_sources_to_label_before = selected_sources_to_label.copy()
+    len_before = len(selected_sources_to_label_before)
+    selected_sources_ind,selected_sources_to_label = label_new_unique_nodes_with_budget(selected_sources_to_label, full_data, (begin_ws_idx, end_ws_idx))
+    assert selected_sources_to_label[:len_before] == selected_sources_to_label_before
+
     for epoch in range(NUM_EPOCH):
-    # for epoch in range(5):
-    # for epoch in range(100):
       logger.debug('--epoch = {}'.format(epoch))
       start_epoch = time.time()
 
@@ -441,17 +456,20 @@ def sliding_window_evaluation_node_prediction(
           batch_idx = k + j
           start_train_idx = batch_idx * BATCH_SIZE
 
-          end_train_idx = min(init_train_data, start_train_idx + BATCH_SIZE)
+          end_train_idx = min(end_ws_idx, start_train_idx + BATCH_SIZE)
 
           assert start_train_idx < end_train_idx, "number of batch to run for each epoch was not set correctly."
+          # assert len(selected_sources_ind) >= end_ws_idx
+          # print(start_train_idx, end_train_idx)
 
           sources_batch, destinations_batch = full_data.sources[start_train_idx:end_train_idx], \
                                               full_data.destinations[start_train_idx:end_train_idx]
           edge_idxs_batch = full_data.edge_idxs[start_train_idx: end_train_idx]
           timestamps_batch = full_data.timestamps[start_train_idx:end_train_idx]
           labels_batch = full_data.labels[start_train_idx:end_train_idx]
+          labels_batch = labels_batch[selected_sources_ind]
 
-          size = len(sources_batch)
+          # size = len(sources_batch)
 
           source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
                                                                                         destinations_batch,
@@ -462,15 +480,25 @@ def sliding_window_evaluation_node_prediction(
 
 
           if train_data.n_unique_labels == 2:
+            raise NotImplementedError
             pred = decoder(source_embedding).sigmoid()
             labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
             decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
           elif train_data.n_unique_labels == 4:
-            pred = decoder(source_embedding).softmax(dim=1)
+            pred = decoder(source_embedding[selected_sources_ind]).softmax(dim=1) # :BUG: I am not sure if selected_sources_ind can be appplied here without effecting model learning
             labels_batch_torch = torch.from_numpy(labels_batch).long().to(device)
             decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
 
+          pred = pred_prob_to_pred_labels(pred.cpu().detach().numpy())
+
+
+
           loss += decoder_loss.item()
+
+        # logger.info(
+        #   f"train labels batch distribution = {get_label_distribution(labels_batch)}")
+        # logger.info(
+        #   f"predicted train labels batch distribution = {get_label_distribution(pred)}")
 
         loss /= args.backprop_every
 
@@ -483,9 +511,13 @@ def sliding_window_evaluation_node_prediction(
         if USE_MEMORY:
           tgn.memory.detach_memory()
 
+      logger.info(
+        f"train labels epoch distribution = {get_label_distribution(labels_batch)}")
+      logger.info(
+        f"predicted train labels epoch distribution = {get_label_distribution(pred)}")
       epoch_time = time.time() - start_epoch
       epoch_times.append(epoch_time)
-
+      logger.info(f'total number of labelled uniqued nodes = {len(selected_sources_to_label)}')
       logger.info('start validation...')
       # Initialize validation and test neighbor finder to retrieve temporal graph
 
@@ -498,9 +530,11 @@ def sliding_window_evaluation_node_prediction(
 
       VAL_BATCH_SIZE = BATCH_SIZE * 1
 
+      assert full_data.timestamps.shape[0] >= end_train_idx + BATCH_SIZE
       # :DEBUG:
-      time_before_end_of_current_batch = full_data.timestamps <= full_data.timestamps[end_train_idx]
-      val_mask = time_before_end_of_current_batch
+      time_after_end_of_current_batch = full_data.timestamps > full_data.timestamps[end_train_idx]
+      time_before_end_of_next_batch = full_data.timestamps <= full_data.timestamps[end_train_idx + BATCH_SIZE]
+      val_mask = np.logical_and(time_after_end_of_current_batch, time_before_end_of_next_batch)
       val_data = Data(full_data.sources[val_mask],
                       full_data.destinations[val_mask],
                       full_data.timestamps[val_mask],
@@ -509,16 +543,17 @@ def sliding_window_evaluation_node_prediction(
                       )
       # assert val_mask.sum() == VAL_BATCH_SIZE, "size of validation set must be the same as batch size."
 
-
-      tgn.eval()
-      decoder.eval()
-      val_auc = my_eval_node_classification(tgn,
+      # tgn.eval()
+      # decoder.eval()
+      val_auc = my_eval_node_classification(logger,
+                                            tgn,
                                          decoder,
                                          val_data,
                                          # full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE],
                                          # full_data.edge_idxs,
                                          # val_data.edge_idxs,
                                          VAL_BATCH_SIZE,
+                                         selected_sources_to_label,
                                         n_neighbors=NUM_NEIGHBORS)
 
       # sources_batch = full_data.sources[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
@@ -555,7 +590,8 @@ def sliding_window_evaluation_node_prediction(
     # init_num_batch += 1
     init_num_ws += 1
 
-    init_train_data = init_num_ws * num_instances_shift
+    begin_ws_idx = end_ws_idx
+    end_ws_idx = min(init_num_ws * num_instances_shift, full_data.edge_idxs.shape[0]-1)
 
     # Training has finished, we have loaded the best model, and we want to backup its current
     # memory (which has seen validation edges) so that it can also be used when testing on unseen

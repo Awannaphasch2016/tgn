@@ -1,5 +1,76 @@
 import numpy as np
 import torch
+from random import choices
+
+def pred_prob_to_pred_labels(pred_prob, selected_ind=None):
+
+  if selected_ind is not None:
+    pred_prob = pred_prob[selected_ind]
+  if pred_prob.reshape(-1).shape[0] == pred_prob.shape[0]:
+    raise NotImplementedError
+    pred = pred_prob > 0.5
+  else:
+    pred = pred_prob.argmax(axis=1)
+  return pred
+
+def get_label_distribution(labels):
+  u, c = np.unique(labels, return_counts=True)
+  uc = np.vstack((u, c))
+  uc_str = []
+  for uu in range(uc.shape[1]):
+    tmp = tuple([cc for cc in uc[:, uu]])
+    uc_str.append(tmp)
+  return uc_str
+
+def find_nodes_ind_to_be_labelled(selected_nodes_to_label, target_nodes_batch):
+  selected_nodes_ind = []
+  for ll in selected_nodes_to_label:
+    selected_nodes_ind.extend(np.where(target_nodes_batch == ll)[0].tolist())
+  return selected_nodes_ind
+
+# def label_new_unique_nodes_with_budget(selected_sources_to_label, data, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, labels_batch):
+def label_new_unique_nodes_with_budget(selected_sources_to_label, data, begin_end_idx_pair=None):
+  assert len(begin_end_idx_pair) == 2
+
+  begin_idx, end_idx = begin_end_idx_pair
+  full_data = data
+
+  sources_batch = full_data.sources[begin_idx:end_idx]
+  # destinations_batch = full_data.destinations[begin_idx:end_idx]
+  # timestamps_batch =  full_data.timestamps[begin_idx:end_idx]
+  # edge_idxs_batch = full_data.edge_idxs[begin_idx:end_idx]
+  # labels_batch = full_data.labels[begin_idx:end_idx]
+
+  # select sources nodes to be labelled.
+  # :BUG: see the following link for full explaination of potential problem.  https://mail.google.com/mail/u/1/#sent/QgrcJHsNlSQcfgjngKvJvfWsltLMshplFxg
+  # :BUG: https://roamresearch.com/#/app/AdaptiveGraphStucture/page/uIwdA9uav
+  # :DEBUG:
+  unique_sources = np.unique(sources_batch)
+  n_unique_sources = unique_sources.shape[0]
+  n_selected_sources = int(full_data.budget * n_unique_sources)
+  total_selected_sources = min(len(selected_sources_to_label) + n_selected_sources, full_data.label_budget)
+  n_unique_sources_to_add = total_selected_sources - len(selected_sources_to_label)
+  assert n_unique_sources_to_add >= 0
+  assert n_unique_sources_to_add < data.n_unique_sources
+  # create mask for new batch
+  if n_unique_sources_to_add > 0:
+    selected_sources_to_label_batch_mask = np.array([False for i in range(sources_batch.shape[0])])
+    if len(selected_sources_to_label) > 0:
+      selected_sources_to_label_batch_mask = np.array(list(map(lambda x: x in selected_sources_to_label, sources_batch)))
+
+    new_sources = sources_batch[~selected_sources_to_label_batch_mask]
+    # after mask is applied, random pick new unique node.
+    if new_sources.shape[0] > 0:
+      unique_sources_ind = np.unique(new_sources, return_index=True)[1]
+      unique_sources_ind_to_add = choices(unique_sources_ind, k=n_unique_sources_to_add)
+      selected_sources_to_label.extend(sources_batch[unique_sources_ind_to_add])
+  assert len(selected_sources_to_label) > 0
+
+  # label nodes that are in sources_batch.
+  selected_sources_ind = find_nodes_ind_to_be_labelled(selected_sources_to_label, sources_batch)
+
+
+  return selected_sources_ind, selected_sources_to_label
 
 
 class MergeLayer(torch.nn.Module):

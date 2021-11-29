@@ -278,7 +278,8 @@ class TGN(torch.nn.Module):
     if not (source_time_delta >= 0).all().item():
       print(source_time_delta)
 
-    assert edge_times.tolist()  == sorted(edge_times.tolist()), "edge_times is not sorted."
+
+    # assert edge_times.tolist()  == sorted(edge_times.tolist()), "edge_times is not sorted."  # :BUG: I am not sure if this behavior is required.
     # assert last_memory.tolist() == sorted(last_memory.tolist()), "last_memory is not sorted."
     # assert edge_times  == sorted(edge_times), "edge_times are not sorted."
 

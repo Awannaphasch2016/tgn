@@ -19,6 +19,9 @@ class Data:
     self.n_unique_nodes = len(self.unique_nodes)
     self.n_unique_sources = len(self.unique_sources)
     self.n_unique_destinations = len(self.unique_destinations)
+    self.budget = 0.1
+    self.label_budget = int(self.budget * self.n_unique_sources)
+
 
 
 
