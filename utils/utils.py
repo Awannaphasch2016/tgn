@@ -13,6 +13,9 @@ def pred_prob_to_pred_labels(pred_prob, selected_ind=None):
     pred = pred_prob.argmax(axis=1)
   return pred
 
+# def get_unique_nodes_labels(labels, nodes):
+#   pass
+
 def get_label_distribution(labels):
   u, c = np.unique(labels, return_counts=True)
   uc = np.vstack((u, c))

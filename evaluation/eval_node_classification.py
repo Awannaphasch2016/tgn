@@ -467,6 +467,7 @@ def sliding_window_evaluation_node_prediction(
           edge_idxs_batch = full_data.edge_idxs[start_train_idx: end_train_idx]
           timestamps_batch = full_data.timestamps[start_train_idx:end_train_idx]
           labels_batch = full_data.labels[start_train_idx:end_train_idx]
+          total_labels_batch = labels_batch
           labels_batch = labels_batch[selected_sources_ind]
 
           # size = len(sources_batch)
@@ -511,10 +512,15 @@ def sliding_window_evaluation_node_prediction(
         if USE_MEMORY:
           tgn.memory.detach_memory()
 
+      logger.info(f"total labels batch epoch distribution = {get_label_distribution(total_labels_batch)}")
       logger.info(
         f"train labels epoch distribution = {get_label_distribution(labels_batch)}")
       logger.info(
         f"predicted train labels epoch distribution = {get_label_distribution(pred)}")
+      # logger.info(
+      #   f"train labels epoch distribution (exclude unique node appear frequency) = {get_label_distribution(get_unique_nodes_labels(labels_batch, ))}")
+      # logger.info(
+      #   f"predicted train labels epoch distribution (exclude unique node appear frequency) = {get_label_distribution(get_unique_nodes_labels(pred))}")
       epoch_time = time.time() - start_epoch
       epoch_times.append(epoch_time)
       logger.info(f'total number of labelled uniqued nodes = {len(selected_sources_to_label)}')
