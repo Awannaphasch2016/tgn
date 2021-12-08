@@ -7,7 +7,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
@@ -114,6 +114,12 @@ def my_eval_node_classification(logger, tgn, decoder, data, batch_size, label_so
     f"test labels distribution = {get_label_distribution(data.labels[all_selected_sources_ind])}")
   logger.info(
     f"predicted test labels distribution = {get_label_distribution(pred)}")
+  logger.info(
+    f"test labels epoch distribution (disregard frequency of unique node) = "
+    f"{get_label_distribution(get_unique_nodes_labels(data.labels[all_selected_sources_ind],data.sources[all_selected_sources_ind]))}")
+  logger.info(
+    f"predicted test labels epoch distribution (disregard frequency of unique node) = "
+    f"{get_label_distribution(get_unique_nodes_labels(pred,data.sources[all_selected_sources_ind]))}")  # note that it is possible that model predict different labels for the same nodes. (I will omit this metric until it is shown to be needed.)
   auc_roc = None
   acc = accuracy(data.labels[all_selected_sources_ind], pred)
   cm = confusion_matrix(data.labels[all_selected_sources_ind], pred, labels=list(range(data.n_unique_labels)))
@@ -468,7 +474,7 @@ def sliding_window_evaluation_node_prediction(
           timestamps_batch = full_data.timestamps[start_train_idx:end_train_idx]
           labels_batch = full_data.labels[start_train_idx:end_train_idx]
           total_labels_batch = labels_batch
-          labels_batch = labels_batch[selected_sources_ind]
+
 
           # size = len(sources_batch)
 
@@ -479,6 +485,8 @@ def sliding_window_evaluation_node_prediction(
                                                                                         edge_idxs_batch,
                                                                                         NUM_NEIGHBORS)
 
+          labels_batch = labels_batch[selected_sources_ind]
+          sources_batch = sources_batch[selected_sources_ind]
 
           if train_data.n_unique_labels == 2:
             raise NotImplementedError
@@ -517,10 +525,12 @@ def sliding_window_evaluation_node_prediction(
         f"train labels epoch distribution = {get_label_distribution(labels_batch)}")
       logger.info(
         f"predicted train labels epoch distribution = {get_label_distribution(pred)}")
-      # logger.info(
-      #   f"train labels epoch distribution (exclude unique node appear frequency) = {get_label_distribution(get_unique_nodes_labels(labels_batch, ))}")
-      # logger.info(
-      #   f"predicted train labels epoch distribution (exclude unique node appear frequency) = {get_label_distribution(get_unique_nodes_labels(pred))}")
+      logger.info(
+        f"train labels epoch distribution (disregard frequency of unique node) = "
+        f"{get_label_distribution(get_unique_nodes_labels(labels_batch, sources_batch))}")
+      logger.info(
+        f"predicted train labels epoch distribution (disregard frequency of unique node) = "
+        f"{get_label_distribution(get_unique_nodes_labels(pred, sources_batch))}") # note that it is possible that model predict different labels for the same nodes. (I will omit this metric until it is shown to be needed.)
       epoch_time = time.time() - start_epoch
       epoch_times.append(epoch_time)
       logger.info(f'total number of labelled uniqued nodes = {len(selected_sources_to_label)}')

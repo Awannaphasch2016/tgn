@@ -241,7 +241,6 @@ dmypy.json
 .pytype/
 
 # End of https://www.toptal.com/developers/gitignore/api/pycharm,python
-/plot/
 /tmp/
 *.PNG
 /references/*
@@ -251,4 +250,3 @@ dmypy.json
 hotkey.txt
 todo.txt
 .idea/*
-scratch.py
