@@ -1,0 +1,50 @@
+project_name: 'tgn'
+
+datasets:
+  id:
+    0:
+      name: reddit
+      path: data/reddit
+    1:
+      name: reddit_with_expert_labels_10000
+      path: data/reddit_with_expert_labels_10000
+    2:
+      name: reddit_with_expert_labels
+      path: data/reddit_with_expert_labels
+
+
+experiments:
+  datasets:
+    id: 0
+  use_memory: False
+  prefix: 18
+  bs: 100
+  n_degree: 10
+  n_head: 2
+  n_degree:
+  n_layer: 1
+  lr: 3e-4
+  patience: 5
+  n_runs: 1
+  drop_out: 0.1
+  gpu: 0
+  node_dim: 100
+  time_dim: 100
+  backprop_every: 1
+  user_memory: False
+  embedding_module: graph_attention
+  message_function: identity
+  aggregator: last
+  memory_update_at_end: False
+  message_dim: 100
+  memory_dim: 172
+  memory_update_at_end: False
+  different_new_nodes: False
+  uniform: False
+  randomize_features: False
+  use_destination_mebedding_in_message: False
+  use_source_embedding_in_message: False
+  n_neg: int
+  use_validation: False
+  new_node: False
+
