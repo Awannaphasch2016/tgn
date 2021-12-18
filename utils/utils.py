@@ -1,6 +1,41 @@
 import numpy as np
 import torch
 from random import choices
+import random
+
+def get_edges_dtype(edges):
+  """
+  https://stackoverflow.com/questions/8317022/get-intersecting-rows-across-two-2d-numpy-arrays
+  """
+
+  # assert not (edges.flags['C_CONTIGUOUS'] and edges.flags['F_CONTIGUOUS'])
+  assert len(edges.shape) == 2
+  assert edges.shape[-1] == 2
+
+  nrows, ncols = edges.shape
+
+  if edges.flags['C_CONTIGUOUS']:
+    dtype={'names':['f{}'.format(i) for i in range(ncols)],
+          'formats':ncols * [edges.dtype]}
+  elif edges.flags['F_CONTIGUOUS']:
+    raise NotImplementedError()
+  else:
+    raise NotImplementedError()
+
+  return dtype
+
+
+def get_different_edges_mask_left(left_edges, right_edges):
+
+  left_edges = np.ascontiguousarray(left_edges)
+  right_edges = np.ascontiguousarray(right_edges)
+
+  left_dtype = get_edges_dtype(left_edges)
+  right_dtype = get_edges_dtype(right_edges)
+
+  only_left_edges_mask = np.isin(left_edges.view(left_dtype).reshape(-1), right_edges.view(right_dtype).reshape(-1), invert=True).reshape(-1)
+
+  return only_left_edges_mask
 
 def pred_prob_to_pred_labels(pred_prob, selected_ind=None):
 
@@ -129,7 +164,6 @@ class MLP(torch.nn.Module):
     x = self.dropout(x)
     return self.fc_3(x).squeeze(dim=1)
 
-
 class EarlyStopMonitor(object):
   def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
     self.max_round = max_round
@@ -157,30 +191,6 @@ class EarlyStopMonitor(object):
     self.epoch_count += 1
 
     return self.num_round >= self.max_round
-
-
-class RandEdgeSampler(object):
-  def __init__(self, src_list, dst_list, seed=None):
-    self.seed = None
-    self.src_list = np.unique(src_list)
-    self.dst_list = np.unique(dst_list)
-
-    if seed is not None:
-      self.seed = seed
-      self.random_state = np.random.RandomState(self.seed)
-
-  def sample(self, size):
-    if self.seed is None:
-      src_index = np.random.randint(0, len(self.src_list), size)
-      dst_index = np.random.randint(0, len(self.dst_list), size)
-    else:
-
-      src_index = self.random_state.randint(0, len(self.src_list), size)
-      dst_index = self.random_state.randint(0, len(self.dst_list), size)
-    return self.src_list[src_index], self.dst_list[dst_index]
-
-  def reset_random_state(self):
-    self.random_state = np.random.RandomState(self.seed)
 
 
 def get_neighbor_finder(data, uniform, max_node_idx=None):

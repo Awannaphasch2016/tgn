@@ -13,6 +13,7 @@ import numpy as np
 from model.tgn import TGN
 from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class
 from utils.data_processing import compute_time_statistics, get_data_node_classification
+from utils.loss import select_decoder_and_loss
 from evaluation.eval_node_classification import train_val_test_evalulation_node_prediction, sliding_window_evaluation_node_prediction
 from utils.data_exploration import collect_burstiness_data_over_sliding_window, collect_burstiness_time_data_over_sliding_window
 
@@ -67,11 +68,20 @@ parser.add_argument('--use_validation', action='store_true',
                     help='Whether to use a validation set')
 parser.add_argument('--new_node', action='store_true', help='model new node')
 
-try:
-  args = parser.parse_args()
-except:
-  parser.print_help()
-  sys.exit(0)
+
+def prep_args():
+  try:
+    is_running_test = [True if 'pytest' in i else False for i in sys.argv]
+    if any(is_running_test):
+      args = parser.parse_args([])
+    else:
+      args = parser.parse_args()
+  except:
+    parser.print_help()
+    sys.exit(0)
+  return args
+
+args = prep_args()
 
 BATCH_SIZE = args.bs
 NUM_NEIGHBORS = args.n_degree
@@ -114,158 +124,168 @@ logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
 
-full_data, node_features, edge_features, train_data, val_data, test_data = \
-  get_data_node_classification(DATA, use_validation=args.use_validation)
-
-assert full_data.n_unique_labels == train_data.n_unique_labels
-assert train_data.n_unique_labels == test_data.n_unique_labels
-
-max_idx = max(full_data.unique_nodes)
-
-train_ngh_finder = get_neighbor_finder(train_data, uniform=UNIFORM, max_node_idx=max_idx)
-
 # Set device
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-# Compute time statistics
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-  compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+if __name__ == "__main__":
+  full_data, node_features, edge_features, train_data, val_data, test_data = \
+    get_data_node_classification(DATA, use_validation=args.use_validation)
 
-for i in range(args.n_runs):
-  results_path = "results/{}_node_classification_{}.pkl".format(args.prefix,
-                                                                i) if i > 0 else "results/{}_node_classification.pkl".format(
-    args.prefix)
-  Path("results/").mkdir(parents=True, exist_ok=True)
+  assert full_data.n_unique_labels == train_data.n_unique_labels
+  assert train_data.n_unique_labels == test_data.n_unique_labels
 
-  # Initialize Model
-  tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
-            edge_features=edge_features, device=device,
-            n_layers=NUM_LAYER,
-            n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
-            message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
-            memory_update_at_start=not args.memory_update_at_end,
-            embedding_module_type=args.embedding_module,
-            message_function=args.message_function,
-            aggregator_type=args.aggregator, n_neighbors=NUM_NEIGHBORS,
-            mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
-            mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
-            use_destination_embedding_in_message=args.use_destination_embedding_in_message,
-            use_source_embedding_in_message=args.use_source_embedding_in_message)
+  max_idx = max(full_data.unique_nodes)
 
-  tgn = tgn.to(device)
+  train_ngh_finder = get_neighbor_finder(train_data, uniform=UNIFORM, max_node_idx=max_idx)
 
-  # num_instance = len(train_data.sources)
-  num_instance = len(train_data.sources)
-  num_batch = math.ceil(num_instance / BATCH_SIZE)
 
-  # print(num_instance, num_batch) # 571580, 5716
-  # exit()
+  # Compute time statistics
+  mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+    compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
 
-  # print(num_instance)
-  # print(num_batch)
-  # exit()
+  for i in range(args.n_runs):
+    results_path = "results/{}_node_classification_{}.pkl".format(args.prefix,
+                                                                  i) if i > 0 else "results/{}_node_classification.pkl".format(
+      args.prefix)
+    Path("results/").mkdir(parents=True, exist_ok=True)
 
-  logger.debug('Num of training instances: {}'.format(num_instance))
-  logger.debug('Num of batches per epoch: {}'.format(num_batch))
+    # Initialize Model
+    tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
+              edge_features=edge_features, device=device,
+              n_layers=NUM_LAYER,
+              n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
+              message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
+              memory_update_at_start=not args.memory_update_at_end,
+              embedding_module_type=args.embedding_module,
+              message_function=args.message_function,
+              aggregator_type=args.aggregator, n_neighbors=NUM_NEIGHBORS,
+              mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
+              mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
+              use_destination_embedding_in_message=args.use_destination_embedding_in_message,
+              use_source_embedding_in_message=args.use_source_embedding_in_message)
 
-  # train_val_test_evalulation_node_prediction(
-  #   logger,
-  #   MODEL_SAVE_PATH,
-  #   tgn,
-  #   device,
-  #   num_batch,
-  #   BATCH_SIZE,
-  #   USE_MEMORY,
-  #   num_instance,
-  #   node_features,
-  #   DROP_OUT,
-  #   args,
-  #   train_data,
-  #   val_data,
-  #   test_data,
-  #   full_data,
-  #   NUM_NEIGHBORS,
-  #   results_path,
-  #   get_checkpoint_path,
-  #   DATA
-  #   )
+    tgn = tgn.to(device)
 
-  ## use with pre-training model to substitute prediction head
-  if train_data.n_unique_labels == 2:
-    decoder = MLP(node_features.shape[1], drop=DROP_OUT)
-    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
-    decoder = decoder.to(device)
-    decoder_loss_criterion = torch.nn.BCELoss()
-  else:
-    decoder = MLP_multiple_class(node_features.shape[1], full_data.n_unique_labels ,drop=DROP_OUT)
-    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
-    decoder = decoder.to(device)
-    decoder_loss_criterion = torch.nn.CrossEntropyLoss()
+    # num_instance = len(train_data.sources)
+    num_instance = len(train_data.sources)
+    num_batch = math.ceil(num_instance / BATCH_SIZE)
 
-  # collect_burstiness_data_over_sliding_window(
-  #   logger,
-  #   BATCH_SIZE,
-  #   args,
-  #   full_data,
-  #   results_path,
-  #   DATA,
-  #   )
+    # print(num_instance, num_batch) # 571580, 5716
+    # exit()
 
-  # collect_burstiness_data_over_sliding_window(
-  #   logger,
-  #   BATCH_SIZE,
-  #   args,
-  #   full_data,
-  #   results_path,
-  #   DATA,
-  #   )
+    # print(num_instance)
+    # print(num_batch)
+    # exit()
 
-  sliding_window_evaluation_node_prediction(
-    logger,
-    MODEL_SAVE_PATH,
-    tgn,
-    device,
-    BATCH_SIZE,
-    USE_MEMORY,
-    node_features,
-    DROP_OUT,
-    args,
-    train_data,
-    val_data,
-    test_data,
-    full_data,
-    NUM_NEIGHBORS,
-    results_path,
-    get_checkpoint_path,
-    DATA,
-    decoder,
-    decoder_optimizer,
-    decoder_loss_criterion,
-    NUM_EPOCH
-    )
+    logger.debug('Num of training instances: {}'.format(num_instance))
+    logger.debug('Num of batches per epoch: {}'.format(num_batch))
 
-  # train_val_test_evalulation_node_prediction(
-  #     logger,
-  #     MODEL_SAVE_PATH,
-  #     tgn,
-  #     device,
-  #     num_batch,
-  #     BATCH_SIZE,
-  #     USE_MEMORY,
-  #     num_instance,
-  #     node_features,
-  #     DROP_OUT,
-  #     args,
-  #     train_data,
-  #     val_data,
-  #     test_data,
-  #     full_data,
-  #     NUM_NEIGHBORS,
-  #     results_path,
-  #     get_checkpoint_path,
-  #     DATA,
-  #     decoder,
-  #     decoder_optimizer,
-  #     decoder_loss_criterion,
-  #   )
+    # train_val_test_evalulation_node_prediction(
+    #   logger,
+    #   MODEL_SAVE_PATH,
+    #   tgn,
+    #   device,
+    #   num_batch,
+    #   BATCH_SIZE,
+    #   USE_MEMORY,
+    #   num_instance,
+    #   node_features,
+    #   DROP_OUT,
+    #   args,
+    #   train_data,
+    #   val_data,
+    #   test_data,
+    #   full_data,
+    #   NUM_NEIGHBORS,
+    #   results_path,
+    #   get_checkpoint_path,
+    #   DATA
+    #   )
+
+    feat_dim = node_features.shape[1]
+    n_unique_labels = full_data.n_unique_labels
+    decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels)
+
+    # ## use with pre-training model to substitute prediction head
+    # if train_data.n_unique_labels == 2:
+    #   decoder = MLP(node_features.shape[1], drop=DROP_OUT)
+    #   decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+    #   decoder = decoder.to(device)
+    #   decoder_loss_criterion = torch.nn.BCELoss()
+    # else:
+    #   decoder = MLP_multiple_class(node_features.shape[1], full_data.n_unique_labels ,drop=DROP_OUT)
+    #   decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+    #   decoder = decoder.to(device)
+    #   decoder_loss_criterion = torch.nn.CrossEntropyLoss()
+
+    # collect_burstiness_data_over_sliding_window(
+    #   logger,
+    #   BATCH_SIZE,
+    #   args,
+    #   full_data,
+    #   results_path,
+    #   DATA,
+    #   )
+
+    # collect_burstiness_data_over_sliding_window(
+    #   logger,
+    #   BATCH_SIZE,
+    #   args,
+    #   full_data,
+    #   results_path,
+    #   DATA,
+    #   )
+
+    # pre_training()
+    # fine_tuning()
+    # test_contrastive_learning()
+
+    sliding_window_evaluation_node_prediction(
+      logger,
+      MODEL_SAVE_PATH,
+      tgn,
+      device,
+      BATCH_SIZE,
+      USE_MEMORY,
+      node_features,
+      DROP_OUT,
+      args,
+      train_data,
+      val_data,
+      test_data,
+      full_data,
+      NUM_NEIGHBORS,
+      results_path,
+      get_checkpoint_path,
+      DATA,
+      decoder,
+      decoder_optimizer,
+      decoder_loss_criterion,
+      NUM_EPOCH
+      )
+
+    # train_val_test_evalulation_node_prediction(
+    #     logger,
+    #     MODEL_SAVE_PATH,
+    #     tgn,
+    #     device,
+    #     num_batch,
+    #     BATCH_SIZE,
+    #     USE_MEMORY,
+    #     num_instance,
+    #     node_features,
+    #     DROP_OUT,
+    #     args,
+    #     train_data,
+    #     val_data,
+    #     test_data,
+    #     full_data,
+    #     NUM_NEIGHBORS,
+    #     results_path,
+    #     get_checkpoint_path,
+    #     DATA,
+    #     decoder,
+    #     decoder_optimizer,
+    #     decoder_loss_criterion,
+    #   )

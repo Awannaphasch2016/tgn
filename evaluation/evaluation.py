@@ -5,7 +5,8 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
+from utils.utils import EarlyStopMonitor, get_neighbor_finder
+from utils.sampler import RandEdgeSampler
 from utils.data_processing import Data
 from tqdm import tqdm
 
@@ -76,6 +77,7 @@ def train_val_test_evaluation(tgn,
   train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
   full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
 
+  raise NotImplementedError("haven't yet implement RandEdgeSampler with negative sampling")
   train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
   val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
   nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
@@ -308,13 +310,6 @@ def sliding_window_evaluation(tgn,
 
   for ws in range(left_num_ws):
 
-    # print(BATCH_SIZE)
-    # print(BATCH_SIZE)
-    # print(total_num_ws)
-    # print(init_num_ws)
-    # print(left_num_ws)
-    # print('innnn it')
-
     num_batch = math.ceil((init_train_data)/BATCH_SIZE)
 
     # print(train_data.n_interactions, train_data.n_unique_nodes)
@@ -351,7 +346,16 @@ def sliding_window_evaluation(tgn,
           batch_idx = k + j
           start_train_idx = batch_idx * BATCH_SIZE
 
-          end_train_idx = min(init_train_data, start_train_idx + BATCH_SIZE)
+          hard_negative_window_size = 10
+          assert hard_negative_window_size < BATCH_SIZE
+
+          end_train_idx = min(init_train_data-hard_negative_window_size, start_train_idx + BATCH_SIZE)
+          end_train_idx = min(end_train_idx, num_instance-hard_negative_window_size) # edge case for hard sampling window.
+          end_train_hard_negative_idx = end_train_idx + hard_negative_window_size
+
+          assert end_train_hard_negative_idx <= init_train_data
+          if end_train_idx <= (num_instance - hard_negative_window_size):
+            assert (end_train_hard_negative_idx - hard_negative_window_size) == end_train_idx
 
           # print(num_batch, init_train_data, start_train_idx, end_train_idx)
           # print('what?')
@@ -375,6 +379,10 @@ def sliding_window_evaluation(tgn,
           edge_idxs_batch = full_data.edge_idxs[start_train_idx: end_train_idx]
           timestamps_batch = full_data.timestamps[start_train_idx:end_train_idx]
 
+          edge_hard_samples_batch = full_data.edge_idxs[start_train_idx:end_train_hard_negative_idx]
+          timestamps_hard_samples_batch = full_data.timestamps[start_train_idx:end_train_hard_negative_idx]
+
+
           # train_mask = timestamps <= val_time
           # train_mask = timestamps < full_data.edge_idx[:init_train_data]
           # train_mask = train_data.timestamps <= full_data.edge_idxs[end_train_idx]
@@ -397,18 +405,15 @@ def sliding_window_evaluation(tgn,
           # print(train_data.n_interactions, train_data.n_unique_nodes)
           train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
           tgn.set_neighbor_finder(train_ngh_finder)
-          train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
-          # observed_rand_sampler = RandEdgeSampler(observed_data.sources, observed_data.destinations)
-
-          # print(train_data.sources.shape)
-          # print(train_data.destinations.shape)
-          # print(np.max(train_data.sources))
-          # print(np.max(train_data.destinations))
-          # print(np.max(destinations_batch))
-
+          train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations, train_data.edge_idxs)
+# observed_rand_sampler = RandEdgeSampler(observed_data.sources, observed_data.destinations)
 
           size = len(sources_batch)
           _, negatives_batch = train_rand_sampler.sample(size)
+
+          n_hard_negative = 5
+          edges_hard_negatives_batch = train_rand_sampler.sample_hard_negative(
+            train_rand_sampler.get_hard_negative_window_mask(2,hard_negative_window_size),      n_hard_negative)
           # _, negatives_batch = observed_rand_sampler.sample(size)
 
           # print(np.max(negatives_batch))

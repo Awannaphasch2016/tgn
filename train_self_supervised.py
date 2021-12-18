@@ -65,11 +65,19 @@ parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
 
 
-try:
-  args = parser.parse_args()
-except:
-  parser.print_help()
-  sys.exit(0)
+def prep_args():
+  try:
+    is_running_test = [True if 'pytest' in i else False for i in sys.argv]
+    if any(is_running_test):
+      args = parser.parse_args([])
+    else:
+      args = parser.parse_args()
+  except:
+    parser.print_help()
+    sys.exit(0)
+  return args
+
+args = prep_args()
 
 BATCH_SIZE = args.bs
 NUM_NEIGHBORS = args.n_degree
@@ -109,117 +117,119 @@ logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
 
-### Extract data for training, validation and testing
-node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-new_node_test_data, timestamps, observed_edges_mask = get_data(DATA,
-                              different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
-
-
-# # Initialize training neighbor finder to retrieve temporal graph
-# train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
-
-# # Initialize validation and test neighbor finder to retrieve temporal graph
-# full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
-
-# # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
-# # across different runs
-# # NB: in the inductive setting, negatives are sampled only amongst other new nodes
-# train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
-# val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-# nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
-#                                       seed=1)
-# test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-# nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
-#                                        new_node_test_data.destinations,
-#                                        seed=3)
-
 
 # Set device
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-# Compute time statistics
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-  compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+if __name__ == "__main__":
+  ### Extract data for training, validation and testing
+  node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
+  new_node_test_data, timestamps, observed_edges_mask = get_data(DATA,
+                                different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
 
 
-for i in range(args.n_runs):
-  results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
-  Path("results/").mkdir(parents=True, exist_ok=True)
+  # # Initialize training neighbor finder to retrieve temporal graph
+  # train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
 
-  # Initialize Model
-  # tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
-  tgn = TGN(neighbor_finder=None, node_features=node_features,
-            edge_features=edge_features, device=device,
-            n_layers=NUM_LAYER,
-            n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
-            message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
-            memory_update_at_start=not args.memory_update_at_end,
-            embedding_module_type=args.embedding_module,
-            message_function=args.message_function,
-            aggregator_type=args.aggregator,
-            memory_updater_type=args.memory_updater,
-            n_neighbors=NUM_NEIGHBORS,
-            mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
-            mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
-            use_destination_embedding_in_message=args.use_destination_embedding_in_message,
-            use_source_embedding_in_message=args.use_source_embedding_in_message,
-            dyrep=args.dyrep)
+  # # Initialize validation and test neighbor finder to retrieve temporal graph
+  # full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
+
+  # # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
+  # # across different runs
+  # # NB: in the inductive setting, negatives are sampled only amongst other new nodes
+  # train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
+  # val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
+  # nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
+  #                                       seed=1)
+  # test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
+  # nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
+  #                                        new_node_test_data.destinations,
+  #                                        seed=3)
 
 
-  criterion = torch.nn.BCELoss()
-  optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
-  tgn = tgn.to(device)
-
-  num_instance = len(full_data.sources)
-  # num_batch = math.ceil(num_instance / BATCH_SIZE)
-  # logger.info('num of training instances: {}'.format(num_instance))
-  # logger.info('num of batches per epoch: {}'.format(num_batch))
-
-  # idx_list = np.arange(num_instance)
-
-  new_nodes_val_aps = []
-  val_aps = []
-  total_epoch_times = []
-  train_losses = []
-  early_stopper = EarlyStopMonitor(max_round=args.patience)
+  # Compute time statistics
+  mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+    compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
 
 
-  logger.info('run = {}'.format(i))
+  for i in range(args.n_runs):
+    results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
+    Path("results/").mkdir(parents=True, exist_ok=True)
 
-  # sliding_window_evaluation(tgn,
-  #                           num_instance,
-  #                           BATCH_SIZE,
-  #                           logger,
-  #                           USE_MEMORY,
-  #                           MODEL_SAVE_PATH,
-  #                           args,
-  #                           optimizer,
-  #                           criterion,
-  #                           full_data,
-  #                           device,
-  #                           NUM_NEIGHBORS
-  #                           )
+    # Initialize Model
+    # tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
+    tgn = TGN(neighbor_finder=None, node_features=node_features,
+              edge_features=edge_features, device=device,
+              n_layers=NUM_LAYER,
+              n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
+              message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
+              memory_update_at_start=not args.memory_update_at_end,
+              embedding_module_type=args.embedding_module,
+              message_function=args.message_function,
+              aggregator_type=args.aggregator,
+              memory_updater_type=args.memory_updater,
+              n_neighbors=NUM_NEIGHBORS,
+              mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
+              mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
+              use_destination_embedding_in_message=args.use_destination_embedding_in_message,
+              use_source_embedding_in_message=args.use_source_embedding_in_message,
+              dyrep=args.dyrep)
 
-  train_val_test_evaluation(tgn,
-                            num_instance,
-                            BATCH_SIZE,
-                            logger,
-                            USE_MEMORY,
-                            MODEL_SAVE_PATH,
-                            args,
-                            optimizer,
-                            criterion,
-                            train_data,
-                            full_data,
-                            val_data,
-                            test_data,
-                            device,
-                            NUM_NEIGHBORS,
-                            early_stopper,
-                            NUM_EPOCH,
-                            new_node_val_data,
-                            new_node_test_data,
-                            get_checkpoint_path,
-                            results_path
-                            )
+
+    criterion = torch.nn.BCELoss()
+    optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
+    tgn = tgn.to(device)
+
+    num_instance = len(full_data.sources)
+    # num_batch = math.ceil(num_instance / BATCH_SIZE)
+    # logger.info('num of training instances: {}'.format(num_instance))
+    # logger.info('num of batches per epoch: {}'.format(num_batch))
+
+    # idx_list = np.arange(num_instance)
+
+    new_nodes_val_aps = []
+    val_aps = []
+    total_epoch_times = []
+    train_losses = []
+    early_stopper = EarlyStopMonitor(max_round=args.patience)
+
+
+    logger.info('run = {}'.format(i))
+
+    sliding_window_evaluation(tgn,
+                              num_instance,
+                              BATCH_SIZE,
+                              logger,
+                              USE_MEMORY,
+                              MODEL_SAVE_PATH,
+                              args,
+                              optimizer,
+                              criterion,
+                              full_data,
+                              device,
+                              NUM_NEIGHBORS
+                              )
+
+    # train_val_test_evaluation(tgn,
+    #                           num_instance,
+    #                           BATCH_SIZE,
+    #                           logger,
+    #                           USE_MEMORY,
+    #                           MODEL_SAVE_PATH,
+    #                           args,
+    #                           optimizer,
+    #                           criterion,
+    #                           train_data,
+    #                           full_data,
+    #                           val_data,
+    #                           test_data,
+    #                           device,
+    #                           NUM_NEIGHBORS,
+    #                           early_stopper,
+    #                           NUM_EPOCH,
+    #                           new_node_val_data,
+    #                           new_node_test_data,
+    #                           get_checkpoint_path,
+    #                           results_path
+    #                           )

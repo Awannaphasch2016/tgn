@@ -2,6 +2,8 @@ import numpy as np
 import random
 import pandas as pd
 
+# def pretrain_finetune_test(full_data):
+#   pass
 
 class Data:
   def __init__(self, sources, destinations, timestamps, edge_idxs, labels):
@@ -83,6 +85,8 @@ def get_data(dataset_name, different_new_nodes_between_val_and_test=False, rando
   timestamps = graph_df.ts.values
 
   full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
+  print('done')
+  exit()
 
   random.seed(2020)
 

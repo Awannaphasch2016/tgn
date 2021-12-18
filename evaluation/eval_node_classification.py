@@ -405,9 +405,8 @@ def sliding_window_evaluation_node_prediction(
   epoch_times = []
   total_epoch_times = []
 
+  # init_train_data = BATCH_SIZE
   init_train_data = max(BATCH_SIZE, math.ceil(num_instance * 0.001)) # :DEBUG:
-  # init_train_data = math.ceil(num_instance * 0.001) # :DEBUG:
-  # init_train_data = math.ceil(num_instance * 0.5)
 
   end_train_idx = None
 
@@ -435,6 +434,7 @@ def sliding_window_evaluation_node_prediction(
 
     selected_sources_to_label_before = selected_sources_to_label.copy()
     len_before = len(selected_sources_to_label_before)
+
     selected_sources_ind,selected_sources_to_label = label_new_unique_nodes_with_budget(selected_sources_to_label, full_data, (begin_ws_idx, end_ws_idx))
     assert selected_sources_to_label[:len_before] == selected_sources_to_label_before
 
@@ -464,6 +464,7 @@ def sliding_window_evaluation_node_prediction(
 
           end_train_idx = min(end_ws_idx, start_train_idx + BATCH_SIZE)
 
+          assert (end_ws_idx - begin_ws_idx) <= BATCH_SIZE, "if false, *_batch will encounter out of  bound error. Maybe intial number of data is more than BATCH_SIZE."
           assert start_train_idx < end_train_idx, "number of batch to run for each epoch was not set correctly."
           # assert len(selected_sources_ind) >= end_ws_idx
           # print(start_train_idx, end_train_idx)
@@ -488,7 +489,7 @@ def sliding_window_evaluation_node_prediction(
           labels_batch = labels_batch[selected_sources_ind]
           sources_batch = sources_batch[selected_sources_ind]
 
-          if train_data.n_unique_labels == 2:
+          if train_data.n_unique_labels == 2: # :NOTE: for readability, train_data should be replaced by full_data, but I am unsure about side effect.
             raise NotImplementedError
             pred = decoder(source_embedding).sigmoid()
             labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
