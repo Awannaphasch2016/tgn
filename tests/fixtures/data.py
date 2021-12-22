@@ -14,7 +14,7 @@ def current_edge_idx():
     return 2
 
 @pytest.fixture
-def hard_negative_window_size():
+def ref_window_size():
     return 3
 
 @pytest.fixture

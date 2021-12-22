@@ -321,6 +321,7 @@ def sliding_window_evaluation(tgn,
 
     m_loss = []
     # for epoch in range(NUM_EPOCH):
+    # epoch_ref_window_size =
     for epoch in range(5):
       logger.debug('--epoch = {}'.format(epoch))
       start_epoch = time.time()
@@ -346,16 +347,16 @@ def sliding_window_evaluation(tgn,
           batch_idx = k + j
           start_train_idx = batch_idx * BATCH_SIZE
 
-          hard_negative_window_size = 10
-          assert hard_negative_window_size < BATCH_SIZE
+          batch_ref_window_size = 0
+          assert batch_ref_window_size < BATCH_SIZE
 
-          end_train_idx = min(init_train_data-hard_negative_window_size, start_train_idx + BATCH_SIZE)
-          end_train_idx = min(end_train_idx, num_instance-hard_negative_window_size) # edge case for hard sampling window.
-          end_train_hard_negative_idx = end_train_idx + hard_negative_window_size
+          end_train_idx = min(init_train_data-batch_ref_window_size, start_train_idx + BATCH_SIZE)
+          end_train_idx = min(end_train_idx, num_instance-batch_ref_window_size) # edge case for hard sampling window.
+          end_train_hard_negative_idx = end_train_idx + batch_ref_window_size
 
           assert end_train_hard_negative_idx <= init_train_data
-          if end_train_idx <= (num_instance - hard_negative_window_size):
-            assert (end_train_hard_negative_idx - hard_negative_window_size) == end_train_idx
+          if end_train_idx <= (num_instance - batch_ref_window_size):
+            assert (end_train_hard_negative_idx - batch_ref_window_size) == end_train_idx
 
           # print(num_batch, init_train_data, start_train_idx, end_train_idx)
           # print('what?')
@@ -405,19 +406,20 @@ def sliding_window_evaluation(tgn,
           # print(train_data.n_interactions, train_data.n_unique_nodes)
           train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
           tgn.set_neighbor_finder(train_ngh_finder)
-          train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations, train_data.edge_idxs)
-# observed_rand_sampler = RandEdgeSampler(observed_data.sources, observed_data.destinations)
 
           size = len(sources_batch)
-          _, negatives_batch = train_rand_sampler.sample(size)
+          if True:
+            train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations, train_data.edge_idxs, batch_ref_window_size)
+            # observed_rand_sampler = RandEdgeSampler(observed_data.sources, observed_data.destinations)
 
-          n_hard_negative = 5
-          edges_hard_negatives_batch = train_rand_sampler.sample_hard_negative(
-            train_rand_sampler.get_hard_negative_window_mask(2,hard_negative_window_size),      n_hard_negative)
-          # _, negatives_batch = observed_rand_sampler.sample(size)
+            _, negatives_batch = train_rand_sampler.sample(size)
 
-          # print(np.max(negatives_batch))
-          # print('love')
+          else:
+
+            train_rand_sampler = RandEdgeSampler_v2(train_data.sources, train_data.destinations, train_data.edge_idxs, batch_ref_window_size)
+
+            n_hard_negative = size
+
 
           with torch.no_grad():
             pos_label = torch.ones(size, dtype=torch.float, device=device)

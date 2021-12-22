@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import pandas as pd
+from pathlib import Path
 
 # def pretrain_finetune_test(full_data):
 #   pass
@@ -62,9 +63,10 @@ def get_data_node_classification(dataset_name, use_validation=False):
 
 def get_data(dataset_name, different_new_nodes_between_val_and_test=False, randomize_features=False):
   ### Load data and train val test split
-  graph_df = pd.read_csv('./data/ml_{}.csv'.format(dataset_name))
-  edge_features = np.load('./data/ml_{}.npy'.format(dataset_name))
-  node_features = np.load('./data/ml_{}_node.npy'.format(dataset_name))
+
+  graph_df = pd.read_csv(Path.cwd() /'data/ml_{}.csv'.format(dataset_name))
+  edge_features = np.load(Path.cwd()/'data/ml_{}.npy'.format(dataset_name))
+  node_features = np.load(Path.cwd()/'data/ml_{}_node.npy'.format(dataset_name))
 
   # # ADD: randomly generate positive edges.
   # removed_edges_ind = np.sort(random.sample(range(graph_df.shape[0]), int(0.9 * graph_df.shape[0])))
@@ -85,8 +87,6 @@ def get_data(dataset_name, different_new_nodes_between_val_and_test=False, rando
   timestamps = graph_df.ts.values
 
   full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
-  print('done')
-  exit()
 
   random.seed(2020)
 

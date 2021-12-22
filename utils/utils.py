@@ -2,6 +2,99 @@ import numpy as np
 import torch
 from random import choices
 import random
+import math
+
+def get_start_idx(current_window_idx, window_size):
+  """
+  assuming the following
+  1. all idx starts from 0
+  2. end_idx of previous window == start_idx + 1  of the current window.
+  """
+  return (current_window_idx * window_size)
+
+def get_end_idx(current_window_idx, window_size):
+  """
+  assuming the following
+  1. all idx starts from 0
+  2. end_idx of previous window == start_idx + 1  of the current window.
+  """
+  start_idx = get_start_idx(current_window_idx, window_size)
+  return start_idx + window_size
+
+
+def compute_nf(nodes_in_current_window, window_size):
+  # n_windows = (nodes_in_past_windows.shape[0] + nodes_in_current_window[0])/window_size
+
+  current_src_uniq_nodes, _, current_src_uniq_nodes_freq =  get_uniq_nodes_freq_in_window(nodes_in_current_window)
+
+  # # :NOTE: I test to see whehter or not get_uniq_hnodes_freq_in_window returns numpy in sorted order .
+  # # :NOTE: just remove the following if too slow. there is not need
+  # assert sorted(current_src_uniq_nodes_freq.tolist())[-1] == max(current_src_uniq_nodes_freq)
+  # assert sorted(current_src_uniq_nodes_freq.tolist())[0] ==  min(current_src_uniq_nodes_freq)
+
+  nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
+
+  return nf
+
+def compute_n_window_containing_nodes(nodes_in_past_windows, nodes_in_current_window, window_size):
+  current_src_uniq_nodes,_, current_src_uniq_nodes_freq = get_uniq_nodes_freq_in_window(nodes_in_current_window)
+
+  n_past_windows = nodes_in_past_windows.shape[0]/window_size
+
+  assert (int(n_past_windows) - n_past_windows) == 0
+  n_past_windows = int(n_past_windows)
+
+  n_past_window_contain_current_src_dict = {ii:0 for ii in current_src_uniq_nodes}
+
+  for i in range(n_past_windows):
+    start_idx = get_start_idx(i, window_size)
+    end_idx = get_end_idx(i, window_size)
+    src_uniq_nodes,_, src_uniq_nodes_freq = get_uniq_nodes_freq_in_window(nodes_in_past_windows[start_idx:end_idx])
+
+    # src_nf = [ii for ii in src_uniq_nodes]
+    
+
+    for j in current_src_uniq_nodes:
+      # if j in src_nf:
+      if j in src_uniq_nodes:
+        n_past_window_contain_current_src_dict[j] += 1
+
+  return  n_past_window_contain_current_src_dict
+
+def convert_dict_values_to_np(a_dict):
+  return np.array([ii for ii in a_dict.values()])
+
+def compute_iwf(nodes_in_past_windows, nodes_in_current_window, window_size):
+  n_past_windows = nodes_in_past_windows.shape[0]/window_size
+
+  n_past_window_contain_current_src_dict = compute_n_window_containing_nodes(nodes_in_past_windows, nodes_in_current_window, window_size)
+
+  n_past_window_contain_current_src = convert_dict_values_to_np(n_past_window_contain_current_src_dict)
+  # print(n_past_window_contain_current_src)
+  # print(n_past_windows)
+
+  wf = n_past_windows # number of document that term appears.
+  iwf = np.array(map(math.log,n_past_windows/n_past_window_contain_current_src))
+  return iwf
+
+def compute_nf_iwf(nodes_in_past_windows, nodes_in_current_window, window_size):
+  """
+  edges_in_all_windows = windows contains edges
+  """
+
+  assert len(nodes_in_past_windows.shape) == 1
+  assert nodes_in_past_windows.shape[0] % window_size == 0
+
+  nf = compute_nf(nodes_in_past_windows, nodes_in_current_window, window_size)
+  iwf = compute_iwf(nodes_in_past_windows, nodes_in_current_window, window_size)
+  assert nf.shape[0] == iwf.shape[0]
+
+  return nf * iwf
+
+def get_uniq_nodes_freq_in_window(edges_in_current_window):
+  assert len(edges_in_current_window.shape) == 1
+  uniq_nodes, uniq_nodes_idx, uniq_nodes_freq = np.unique(edges_in_current_window, return_counts=True, return_index=True)
+  return (uniq_nodes, uniq_nodes_idx,uniq_nodes_freq)
 
 def get_edges_dtype(edges):
   """
