@@ -138,7 +138,7 @@ def test_compute_n_window_containing_edges():
 
     n_past_window_contain_current_edges_dict = compute_n_window_containing_edges(edges_in_past_windows, edges_in_current_windows, window_size)
 
-    assert n_past_window_contain_current_edges_dict[(2,202)] == 1
+    assert n_past_window_contain_current_edges_dict[(2,202)] == 2
     with pytest.raises(KeyError):
         print(n_past_window_contain_current_edges_dict[(1,101)])
     with pytest.raises(KeyError):
@@ -171,11 +171,11 @@ def test_compute_n_window_containing_nodes():
     # n_past_window_contain_current_src_dict = convert_dict_values_to_np(n_past_window_contain_current_src_dict)
     # n_past_window_contain_current_dst_dict = convert_dict_values_to_np(n_past_window_contain_current_dst_dict)
 
-    assert n_past_window_contain_current_src_dict[2] == 2
+    assert n_past_window_contain_current_src_dict[2] == 3
     with pytest.raises(KeyError):
         print(n_past_window_contain_current_src_dict[1])
 
-    assert n_past_window_contain_current_dst_dict[202] == 1
+    assert n_past_window_contain_current_dst_dict[202] == 2
     with pytest.raises(KeyError):
         print(n_past_window_contain_current_dst_dict[101])
     with pytest.raises(KeyError):
@@ -192,11 +192,11 @@ def test_compute_n_window_containing_nodes():
     n_past_window_contain_current_src_dict = compute_n_window_containing_nodes(src_in_past_windows, src_in_current_windows, window_size)
     n_past_window_contain_current_dst_dict = compute_n_window_containing_nodes(dst_in_past_windows, dst_in_current_windows, window_size)
 
-    assert n_past_window_contain_current_src_dict[1] == 1
-    assert n_past_window_contain_current_src_dict[2] == 1
+    assert n_past_window_contain_current_src_dict[1] == 2
+    assert n_past_window_contain_current_src_dict[2] == 2
 
-    assert n_past_window_contain_current_dst_dict[202] == 0
-    assert n_past_window_contain_current_dst_dict[303] == 0
+    assert n_past_window_contain_current_dst_dict[202] == 1
+    assert n_past_window_contain_current_dst_dict[303] == 1
     with pytest.raises(KeyError):
         print(n_past_window_contain_current_dst_dict[101])
 
@@ -213,10 +213,10 @@ def test_compute_n_window_containing_nodes():
     n_past_window_contain_current_src_dict = compute_n_window_containing_nodes(src_in_past_windows, src_in_current_windows, window_size)
     n_past_window_contain_current_dst_dict = compute_n_window_containing_nodes(dst_in_past_windows, dst_in_current_windows, window_size)
 
-    assert n_past_window_contain_current_src_dict[1] == 1
-    assert n_past_window_contain_current_src_dict[2] == 1
-    assert n_past_window_contain_current_dst_dict[202] == 1
-    assert n_past_window_contain_current_dst_dict[303] == 0
+    assert n_past_window_contain_current_src_dict[1] == 2
+    assert n_past_window_contain_current_src_dict[2] == 2
+    assert n_past_window_contain_current_dst_dict[202] == 2
+    assert n_past_window_contain_current_dst_dict[303] == 1
     with pytest.raises(KeyError):
         print(n_past_window_contain_current_dst_dict[101])
 
@@ -244,19 +244,25 @@ def test_compute_iwf():
     edges_in_current_window = edges[-window_size:]
 
 
+
     # ### test compute_as_nodes == True
     iwf = compute_iwf(src_in_past_windows, src_in_current_window, window_size)
-    assert np.array_equal(iwf,  np.array(list(map(math.log,2/np.array([2])))))
+    print(iwf)
+    print(np.array(list(map(math.log,3/np.array([3])))))
+    assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([3])))))
     assert sum(np.where(iwf==float('inf'))[0]) == 0
+    assert iwf.min() >= 0
 
     iwf = compute_iwf(dst_in_past_windows, dst_in_current_window, window_size)
-    assert np.array_equal(iwf,  np.array(list(map(math.log,2/np.array([1,1])))))
+    assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([2,2])))))
     assert sum(np.where(iwf==float('inf'))[0]) == 0
+    assert iwf.min() >= 0
 
     ### test compute_as_nodes == False
     iwf = compute_iwf(edges_in_past_windows, edges_in_current_window, window_size, compute_as_nodes=False)
-    assert np.array_equal(iwf,  np.array([list(map(math.log,2/np.array([1])))[0],0]))
+    assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([2,1])))))
     assert sum(np.where(iwf==float('inf'))[0]) == 0
+    assert iwf.min() >= 0
 
 def test_compute_xf_iwf():
     edges = np.array([[2,101],
@@ -283,11 +289,11 @@ def test_compute_xf_iwf():
 
     ### test 1
     nf_iwf = compute_xf_iwf(src_in_past_windows, src_in_current_window, window_size)
-    assert nf_iwf ==  1 + (np.array([2/2])) * (np.array(list(map(math.log,2/np.array([2])))))
+    assert nf_iwf ==  1 + (np.array([2/2])) * (np.array(list(map(math.log,3/np.array([3])))))
     assert np.all(nf_iwf >= 1)
 
     ef_iwf = compute_xf_iwf(edges_in_past_windows, edges_in_current_window, window_size, compute_as_nodes=False)
-    assert ef_iwf ==  1 + (np.array([2])/2) * (np.array(list(map(math.log,2/np.array([1])))))
+    assert ef_iwf ==  1 + (np.array([2])/2) * (np.array(list(map(math.log,3/np.array([2])))))
     assert np.all(ef_iwf >= 1)
 
     ### test 2

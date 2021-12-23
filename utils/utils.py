@@ -45,7 +45,7 @@ def compute_n_window_containing_edges(edges_in_past_windows, edges_in_current_wi
   assert (int(n_past_windows) - n_past_windows) == 0
   n_past_windows = int(n_past_windows)
 
-  n_past_window_contain_current_dict = {tuple(ii.tolist()):0 for ii in current_uniq_edges}
+  n_past_window_contain_current_dict = {tuple(ii.tolist()):1 for ii in current_uniq_edges}
 
   for i in range(n_past_windows):
     start_idx = get_start_idx(i, window_size)
@@ -59,14 +59,18 @@ def compute_n_window_containing_edges(edges_in_past_windows, edges_in_current_wi
   return  n_past_window_contain_current_dict
 
 def compute_n_window_containing_nodes(nodes_in_past_windows, nodes_in_current_window, window_size):
+  # nodes_in_all_windows = np.vstack((nodes_in_past_windows, nodes_in_current_window))
+
   current_src_uniq_nodes,_, current_src_uniq_nodes_freq = get_uniq_nodes_freq_in_window(nodes_in_current_window)
+
+  # current_src_uniq_nodes,_, current_src_uniq_nodes_freq = get_uniq_nodes_freq_in_window(nodes_in_all_windows)
 
   n_past_windows = nodes_in_past_windows.shape[0]/window_size
 
   assert (int(n_past_windows) - n_past_windows) == 0
   n_past_windows = int(n_past_windows)
 
-  n_past_window_contain_current_src_dict = {ii:0 for ii in current_src_uniq_nodes}
+  n_past_window_contain_current_src_dict = {ii:1 for ii in current_src_uniq_nodes}
 
   for i in range(n_past_windows):
     start_idx = get_start_idx(i, window_size)
@@ -87,29 +91,41 @@ def convert_dict_values_to_np(a_dict):
   return np.array([ii for ii in a_dict.values()])
 
 def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=True):
+  # assert x_in_past_windows.shape[0] % window_size == 0
+  # assert x_in_current_windows.shape[0] % window_size == 0
+
+  n_past_windows = x_in_past_windows.shape[0]/window_size
+  n_current_window = x_in_current_window.shape[0]/window_size
+  n_all_windows = n_past_windows + n_current_window
+
   if compute_as_nodes:
-    n_past_windows = x_in_past_windows.shape[0]/window_size
+    # n_past_windows = x_in_past_windows.shape[0]/window_size
+    # n_current_window = x_in_current_window.shape[0]/window_size
 
-    n_past_window_contain_current_x_dict = compute_n_window_containing_nodes(x_in_past_windows, x_in_current_window, window_size)
+    n_all_window_contain_current_x_dict = compute_n_window_containing_nodes(x_in_past_windows, x_in_current_window, window_size)
 
-    n_past_window_contain_current_x = convert_dict_values_to_np(n_past_window_contain_current_x_dict)
+    n_all_window_contain_current_x = convert_dict_values_to_np(n_all_window_contain_current_x_dict)
 
   else:
     assert len(x_in_past_windows.shape) == 2
+    assert len(x_in_current_window.shape) == 2
     assert x_in_past_windows.shape[1] == 2
+    assert x_in_current_window.shape[1] == 2
 
-    n_past_windows = x_in_past_windows.shape[0]/window_size
+    # n_past_windows = x_in_past_windows.shape[0]/window_size
+    # n_current_window = x_in_current_window.shape[0]/window_size
 
 
-    n_past_window_contain_current_x_dict = compute_n_window_containing_edges(x_in_past_windows, x_in_current_window, window_size)
+    n_all_window_contain_current_x_dict = compute_n_window_containing_edges(x_in_past_windows, x_in_current_window, window_size)
 
-    n_past_window_contain_current_x = convert_dict_values_to_np(n_past_window_contain_current_x_dict)
+    n_all_window_contain_current_x = convert_dict_values_to_np(n_all_window_contain_current_x_dict)
 
-  wf = n_past_windows # number of document that term appears.
-  iwf = np.array(list(map(math.log,n_past_windows/n_past_window_contain_current_x)))
 
-  iwf_mask = np.where(n_past_window_contain_current_x==0)[0]
-  iwf[iwf_mask] = 0
+  wf = n_all_windows # number of document that term appears.
+  iwf = np.array(list(map(math.log,wf/n_all_window_contain_current_x)))
+
+  # iwf_mask = np.where(n_past_window_contain_current_x==0)[0]
+  # iwf[iwf_mask] = 0
 
   return iwf
 

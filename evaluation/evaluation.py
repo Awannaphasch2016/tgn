@@ -300,7 +300,7 @@ def sliding_window_evaluation(tgn,
   end_train_idx = None
 
 
-  num_instances_shift = BATCH_SIZE * 10
+  num_instances_shift = BATCH_SIZE * 1
 
   # total_num_batch =  math.ceil(num_instance/BATCH_SIZE)
   # init_num_batch = math.ceil((init_train_data)/BATCH_SIZE)
