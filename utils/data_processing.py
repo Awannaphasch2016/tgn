@@ -75,6 +75,7 @@ def get_data(dataset_name, different_new_nodes_between_val_and_test=False, rando
   # # print(edge_features.shape)
   # # print(graph_df.shape)
 
+  # :NOTE: nodes features
   if randomize_features:
     node_features = np.random.rand(node_features.shape[0], node_features.shape[1])
 

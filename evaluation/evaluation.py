@@ -5,7 +5,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf
 from utils.sampler import RandEdgeSampler
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -282,10 +282,11 @@ def sliding_window_evaluation(tgn,
                             MODEL_SAVE_PATH,
                             args,
                             optimizer,
-                            criterion,
+                            # criterion,
                             full_data,
                             device,
-                            NUM_NEIGHBORS):
+                            NUM_NEIGHBORS,
+                            use_weight=False):
 
   epoch_times = []
   total_epoch_times = []
@@ -293,7 +294,8 @@ def sliding_window_evaluation(tgn,
   # ADD: variables for sliding_window_evaluation
   # init_train_data = math.ceil(num_instance * 0.4)
   # init_train_data = math.ceil(num_instance * 0.05)
-  init_train_data = math.ceil(num_instance * 0.01)
+  # init_train_data = math.ceil(num_instance * 0.01)
+  init_train_data = BATCH_SIZE
 
   end_train_idx = None
 
@@ -307,6 +309,10 @@ def sliding_window_evaluation(tgn,
   total_num_ws =  math.ceil(num_instance/num_instances_shift)
   init_num_ws = math.ceil((init_train_data)/num_instances_shift)
   left_num_ws = total_num_ws - init_num_ws
+
+  ef_iwf_window_dict = {}
+  pos_edges_weight = None
+  neg_edges_weight = None
 
   for ws in range(left_num_ws):
 
@@ -429,7 +435,33 @@ def sliding_window_evaluation(tgn,
           pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
                                                               timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-          loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
+          criterion = torch.nn.BCELoss
+
+          # assert use_weight == True
+          if k not in ef_iwf_window_dict:
+            if k > 1 and use_weight:
+              edges_ = np.vstack((train_data.sources, train_data.destinations)).T
+              start_past_window_idx = start_train_idx - BATCH_SIZE
+              end_past_window_idx = end_train_hard_negative_idx - BATCH_SIZE
+              edges_in_past_windows = edges_[:start_past_window_idx]
+              edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
+
+              ef_iwf, edges_to_ef_iwf_current_window_dict = compute_xf_iwf(edges_in_past_windows, edges_in_current_window , BATCH_SIZE, compute_as_nodes=False, return_x_value_dict=True)
+
+              ef_iwf_window_dict[k] = edges_to_ef_iwf_current_window_dict
+              pos_edges_weight = []
+              ef_iwf_current_window_dict = ef_iwf_window_dict[k]
+
+              for ii in edges_in_current_window:
+                pos_edges_weight.append(ef_iwf_current_window_dict[tuple(ii)])
+
+              pos_edges_weight = torch.FloatTensor(pos_edges_weight)
+
+          if k > 1 and use_weight:
+            loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
+          else:
+            loss += criterion()(pos_prob.squeeze(), pos_label) + criterion()(neg_prob.squeeze(), neg_label)
+
 
         loss /= args.backprop_every
 

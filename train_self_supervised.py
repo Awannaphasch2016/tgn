@@ -63,6 +63,8 @@ parser.add_argument('--use_source_embedding_in_message', action='store_true',
                     help='Whether to use the embedding of the source node as part of the message')
 parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
+parser.add_argument('--use_ef_iwf_weight', action='store_true',
+                    help='Whether to run the dyrep model')
 
 
 def prep_args():
@@ -94,6 +96,8 @@ TIME_DIM = args.time_dim
 USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
+# use_weight = True
+use_weight = args.use_ef_iwf_weight
 
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
@@ -177,7 +181,7 @@ if __name__ == "__main__":
               dyrep=args.dyrep)
 
 
-    criterion = torch.nn.BCELoss()
+    # criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
     tgn = tgn.to(device)
 
@@ -205,10 +209,11 @@ if __name__ == "__main__":
                               MODEL_SAVE_PATH,
                               args,
                               optimizer,
-                              criterion,
+                              # criterion,
                               full_data,
                               device,
-                              NUM_NEIGHBORS
+                              NUM_NEIGHBORS,
+                              use_weight=use_weight,
                               )
 
     # train_val_test_evaluation(tgn,

@@ -147,6 +147,7 @@ class TGN(torch.nn.Module):
       time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
                              dim=0)
 
+    # :TODO: concatenate NF-INF to nodes features before apply node embedding. add NF-IWF column to node features.
     # Compute the embeddings using the embedding module
     node_embedding = self.embedding_module.compute_embedding(memory=memory,
 
@@ -185,8 +186,6 @@ class TGN(torch.nn.Module):
 
       if self.memory_update_at_start:
         self.memory.store_raw_messages(unique_sources, source_id_to_messages)
-        print(self.get_updated_memory(list(range(self.n_nodes)),
-                                      self.memory.messages)[1][14])
         self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
       else:
         self.update_memory(unique_sources, source_id_to_messages)

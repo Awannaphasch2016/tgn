@@ -11,4 +11,4 @@ if __name__ == "__main__":
     # generate_random_graph_given_degree_dist(10)
     sequence = nx.random_powerlaw_tree_sequence(100, tries=5000, seed=0)
     edges = generate_edges_ind_of_random_graph_given_degree_seq(sequence)
-    print(edges)
+    # print(edges)
