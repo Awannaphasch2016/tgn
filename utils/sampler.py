@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 
-from utils.utils import get_edges_dtype, get_different_edges_mask_left
+from utils.utils import get_edges_dtype, get_different_edges_mask_left, compute_nf, get_uniq_nodes_freq_in_window, compute_xf_iwf
 import numpy as np
 import torch
 from random import choices
 import random
+import math
 
 class Sampler(object):
-  def __init__(self, src_list, dst_list, edge_list, ref_window_size, seed=None):
+  def __init__(self, src_list, dst_list, edge_list, ref_window_size, start_idx, end_idx, seed=None):
     self.seed = None
     self.src_list = np.unique(src_list)
     self.dst_list = np.unique(dst_list)
     self.edges =  np.vstack([src_list, dst_list]).T
     self.edge_list = edge_list
     self.ref_window_size = ref_window_size
+    self.start_idx = start_idx
+    self.end_idx = end_idx
 
     if seed is not None:
       self.seed = seed
@@ -37,6 +40,16 @@ class Sampler(object):
   def sample(self, size):
     return self.sample_v1(self.src_list, size)
 
+  def sample_with_probability(self, src_list, size, probability=None):
+    if self.seed is None:
+      src_batch = choices(src_list, weights=probability, k=size)
+      dst_batch = choices(self.dst_list, k=size)
+    else:
+      src_batch = self.random_state.choice(src_list, size, p=probability)
+      dst_batch = self.random_state.choice(self.dst_list, size)
+
+    return src_batch, dst_batch
+
   def sample_v1(self, src_list, size):
     """
     this sapmle_v1 method is created to extend sample method to accept unique set of src_list as arguments.
@@ -48,11 +61,81 @@ class Sampler(object):
     else:
       src_index = self.random_state.randint(0, len(src_list), size)
       dst_index = self.random_state.randint(0, len(self.dst_list), size)
-    return self.src_list[src_index], self.dst_list[dst_index]
+
+    return src_list[src_index], self.dst_list[dst_index]
+
+class EdgeSampler_NF_IWF(Sampler):
+
+  def rank_unique_node_from_begining_based_on_nf(self, node_list):
+    all_node_uniq_nodes, all_node_uniq_idx , all_node_uniq_nodes_freq = get_uniq_nodes_freq_in_window(node_list)
+
+    uniq_node_nf = compute_nf(node_list, None)
+
+    all_uniq_node_to_nf_dict = {i:j for i,j in zip(all_node_uniq_nodes,uniq_node_nf)}
+
+    uniq_node_nf_in_all_window = np.array([all_uniq_node_to_nf_dict[i] for i in all_node_uniq_nodes])
+
+    sort_idx = np.argsort(uniq_node_nf_in_all_window)[::-1]
+
+    ranked_uniq_node_nf_in_all_window = uniq_node_nf_in_all_window[sort_idx]
+    ranked_all_node_uniq_nodes = all_node_uniq_nodes[sort_idx]
+    ranked_all_node_uniq_nodes_freq = all_node_uniq_nodes_freq[sort_idx]
+    assert ranked_uniq_node_nf_in_all_window.max() == ranked_uniq_node_nf_in_all_window[0]
+
+    return ranked_all_node_uniq_nodes,ranked_uniq_node_nf_in_all_window, ranked_all_node_uniq_nodes_freq
+
+  def rank_unique_node_in_window_based_on_nf_iwf(self, node_list, start_idx, end_idx):
+    window_size = end_idx - start_idx
+    node_in_past_windows = node_list[:start_idx]
+    node_in_current_window = node_list[start_idx:end_idx]
+
+    current_node_uniq_nodes, current_node_uniq_idx , current_node_uniq_nodes_freq = get_uniq_nodes_freq_in_window(node_in_current_window)
+
+    all_node_uniq_nodes, all_node_uniq_idx , all_node_uniq_nodes_freq = get_uniq_nodes_freq_in_window(node_list)
+
+    # uniq_node_nf = compute_nf(node_list, None)
+    uniq_node_nf_iwf = compute_xf_iwf(node_in_past_windows, node_in_current_window ,window_size=window_size)
+
+    # all_uniq_node_to_nf_dict = {i:j for i,j in zip(all_node_uniq_nodes,uniq_node_nf)}
+    current_uniq_node_to_nf_dict = {i:j for i,j in zip(current_node_uniq_nodes,uniq_node_nf_iwf)}
+
+    uniq_node_nf_in_current_window = np.array([current_uniq_node_to_nf_dict[i] for i in current_node_uniq_nodes])
+
+    sort_idx = np.argsort(uniq_node_nf_in_current_window)[::-1]
+
+    # ranked_uniq_node_nf_in_current_window = np.sort(uniq_node_nf_in_current_window)[::-1]
+    ranked_uniq_node_nf_in_current_window = uniq_node_nf_in_current_window[sort_idx]
+    ranked_current_node_uniq_nodes = current_node_uniq_nodes[sort_idx]
+    ranked_current_node_uniq_nodes_freq = current_node_uniq_nodes_freq[sort_idx]
+    assert ranked_uniq_node_nf_in_current_window.max() == ranked_uniq_node_nf_in_current_window[0]
+
+    # ranked_node = np.array([current_uniq_node_to_idx_dict[i] for i in node_in_current_window])
+    # return ranked_node, current_uniq_node_to_idx_dict
+    return ranked_current_node_uniq_nodes,ranked_uniq_node_nf_in_current_window, ranked_current_node_uniq_nodes_freq
+
+  # def sample_nf_iwf(self, batch_size, size, top_k_percent=0.2, only_nodes_in_current_window=False):
+  def sample_nf_iwf(self, batch_size, size, top_k_percent=0.2):
+    assert self.end_idx-self.start_idx == batch_size # this only pass when window_size == batch_size
+
+    nodes = self.edges[:,0]
+
+    ranked_uniq_nodes, ranked_uniq_node_nf, ranked_uniq_nodes_freq = self.rank_unique_node_in_window_based_on_nf_iwf(nodes, self.start_idx, self.end_idx)
+
+    # if only_nodes_in_current_window:
+      # ranked_uniq_nodes, ranked_uniq_node_nf, ranked_uniq_nodes_freq = self.rank_unique_node_in_window_based_on_nf_iwf(nodes, self.start_idx, self.end_idx)
+    # else:
+    #   ranked_uniq_nodes, ranked_uniq_node_nf, ranked_uniq_nodes_freq = self.rank_unique_node_from_begining_based_on_nf(nodes)
+
+    # sample negative edges based on src node frequency.
+    top_node_ind =  math.ceil(ranked_uniq_nodes.shape[0] * top_k_percent)
+    top_node = ranked_uniq_nodes[:top_node_ind]
+    top_node_prob = ranked_uniq_nodes_freq[:top_node_ind]/sum(ranked_uniq_nodes_freq[:top_node_ind])
+
+    return self.sample_with_probability(top_node, size, probability=top_node_prob)
+
 
 class RandEdgeSampler(Sampler):
   pass
-
 
 class RandEdgeSampler_v1(Sampler):
 

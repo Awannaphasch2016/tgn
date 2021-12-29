@@ -4,6 +4,9 @@ from random import choices
 import random
 import math
 
+def sigmoid(x):
+  return torch.nn.functional.sigmoid(torch.from_numpy(x)).cpu().detach().numpy()
+
 def get_start_idx(current_window_idx, window_size):
   """
   assuming the following
@@ -122,10 +125,13 @@ def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_
 
 
   wf = n_all_windows # number of document that term appears.
-  iwf = np.array(list(map(math.log,wf/n_all_window_contain_current_x)))
+  iwf = np.array(list(map(math.log, wf/n_all_window_contain_current_x)))
 
-  # iwf_mask = np.where(n_past_window_contain_current_x==0)[0]
-  # iwf[iwf_mask] = 0
+  iwf_mask = np.where(n_all_window_contain_current_x==0)[0]
+  iwf[iwf_mask] = 999999 # replace inf value with very large number.
+
+  # :NOTE: apply sigmoid function to set range of iwf to be [0,1]
+  # iwf = torch.nn.functional.sigmoid(torch.from_numpy(iwf)).cpu().detach().numpy()
 
   return iwf
 

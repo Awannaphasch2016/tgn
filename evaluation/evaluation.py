@@ -5,8 +5,8 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf
-from utils.sampler import RandEdgeSampler
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf
+from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
 
@@ -273,11 +273,142 @@ def train_val_test_evaluation(tgn,
   torch.save(tgn.state_dict(), MODEL_SAVE_PATH)
   logger.info('TGN model saved')
 
+def get_sampler(data, batch_ref_window_size, start_train_idx, end_train_hard_negative_idx, neg_sample_method):
+  if neg_sample_method == "nf_iwf":
+    # sampler = RandEdgeSampler_v2(data.sources, data.destinations, data.edge_idxs, batch_ref_window_size)
+    sampler = EdgeSampler_NF_IWF(data.sources, data.destinations, data.edge_idxs, batch_ref_window_size, start_train_idx, end_train_hard_negative_idx)
+  elif neg_sample_method == 'random':
+    sampler = RandEdgeSampler(data.sources, data.destinations, data.edge_idxs, batch_ref_window_size, start_train_idx, end_train_hard_negative_idx)
+  else:
+    raise NotImplementedError()
+
+  return sampler
+
+def get_negative_nodes_batch(sampler, batch_size, size, neg_sample_method):
+  if neg_sample_method == "nf_iwf":
+    # raise NotImplemented
+    # neg_src_batch, neg_dst_batch = sampler.sample(size)
+    neg_src_batch, neg_dst_batch = sampler.sample_nf_iwf(batch_size, size)
+  elif neg_sample_method == "random":
+    neg_src_batch, neg_dst_batch = sampler.sample(size)
+  else:
+    raise NotImplementedError
+
+  return neg_src_batch, neg_dst_batch
+
+def init_pos_neg_labels(size, device):
+  with torch.no_grad():
+    pos_label = torch.ones(size, dtype=torch.float, device=device)
+    neg_label = torch.zeros(size, dtype=torch.float, device=device)
+  return pos_label, neg_label
+
+def get_criterion():
+  criterion = torch.nn.BCELoss
+  return criterion
+
+# def get_nf_iwf(sampler, data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, use_nf_iwf_neg_sampling=False):
+#   if use_nf_iwf_neg_sampling:
+#     return sampler.sample_nf_iwf(batch_size, size)
+#   else;
+#     return None, None
+
+def get_edges_weight(data, sampled_nodes, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, ef_iwf_window_dict, weighted_loss_method):
+
+  pos_edges_weight = None
+  neg_edges_weight = None
+
+  if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
+    pos_edges_weight = get_ef_iwf(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict)
+  elif weighted_loss_method == "nf_iwf_as_pos_and_neg_edge_weight":
+    # use nodes as edges weight
+    pos_edges_weight = get_nf_iwf(data, sampled_nodes, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict)
+    # get neg_edges_weight from sampled_nodes.
+    #
+  elif weighted_loss_method == "no_weight":
+    pass
+  else:
+    raise NotImplementedError()
+
+  return pos_edges_weight, neg_edges_weight
+
+def get_nf_iwf(data, sampled_nodes, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict):
+
+  start_past_window_idx = start_train_idx
+  end_past_window_idx = end_train_hard_negative_idx
+  nodes_in_past_windows = data.sources[:start_past_window_idx]
+  nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
+  src_nodes_weight = []
+
+  if batch_idx not in nf_iwf_window_dict:
+    nf_iwf, nodes_to_nf_iwf_current_window_dict = compute_xf_iwf(nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)
+    nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
+    # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
+
+  # :TODO: :HERE: there are two sampling cases:
+  # 1. original. (This case. sampled src may not be inside of nf_iwf_window_dict)
+  # 2. using EdgeSampler_NF_IWF. (This case nodes is garantee to be in the current window)
+  for ii in nodes_in_current_window:
+    src_nodes_weight.append(nf_iwf_window_dict[batch_idx][ii])
+
+  assert len(src_nodes_weight) == nodes_in_current_window.shape[0]
+  src_nodes_weight = torch.FloatTensor(src_nodes_weight)
+
+  return src_nodes_weight
+
+
+def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict):
+
+  edges_ = np.vstack((data.sources, data.destinations)).T
+  start_past_window_idx = start_train_idx
+  end_past_window_idx = end_train_hard_negative_idx
+  edges_in_past_windows = edges_[:start_past_window_idx]
+  edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
+  pos_edges_weight = []
+
+  if batch_idx not in ef_iwf_window_dict:
+    # if batch_idx > 1 and use_ef_iwf_weight:
+    # if batch_idx >= 0:
+    ef_iwf, edges_to_ef_iwf_current_window_dict = compute_xf_iwf(edges_in_past_windows, edges_in_current_window , batch_size, compute_as_nodes=False, return_x_value_dict=True)
+
+    ef_iwf_window_dict[batch_idx] = edges_to_ef_iwf_current_window_dict
+
+  for ii in edges_in_current_window:
+    pos_edges_weight.append(ef_iwf_window_dict[batch_idx][tuple(ii)])
+  assert len(pos_edges_weight) == edges_in_current_window.shape[0]
+
+  pos_edges_weight = torch.FloatTensor(pos_edges_weight)
+
+  return pos_edges_weight
+
+def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg_edges_weight,batch_idx, criterion, loss, weighted_loss_method):
+
+  # if batch_idx > 1 and use_ef_iwf_weight:
+  if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
+    assert neg_edges_weight is None
+    assert pos_edges_weight is not None
+    if batch_idx >= 0:
+      loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
+    else:
+      loss += criterion()(pos_prob.squeeze(), pos_label) + criterion()(neg_prob.squeeze(), neg_label)
+  elif weighted_loss_method == "nf_iwf_as_pos_and_neg_edge_weight":
+    assert neg_edges_weight is not None
+    assert pos_edges_weight is not None
+    # raise NotImplementedError()
+    loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion(weight=neg_edges_weight)(neg_prob.squeeze(), neg_label)
+  elif weighted_loss_method == "no_weight":
+    assert neg_edges_weight is None
+    assert pos_edges_weight is None
+    loss += criterion()(pos_prob.squeeze(), pos_label) + criterion()(neg_prob.squeeze(), neg_label)
+  else:
+    raise NotImplementedError()
+
+  return loss
 
 def sliding_window_evaluation(tgn,
                             num_instance,
                             BATCH_SIZE,
                             logger,
+                            logger_2,
                             USE_MEMORY,
                             MODEL_SAVE_PATH,
                             args,
@@ -285,8 +416,23 @@ def sliding_window_evaluation(tgn,
                             # criterion,
                             full_data,
                             device,
-                            NUM_NEIGHBORS,
-                            use_weight=False):
+                            NUM_NEIGHBORS):
+
+  if args.use_ef_iwf_weight and args.use_nf_iwf_neg_sampling:
+    raise NotImplementedError()
+  elif args.use_ef_iwf_weight:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+  elif args.use_nf_iwf_neg_sampling:
+    neg_sample_method = "nf_iwf"
+    neg_edges_formation = "sampled_src_and_sampled_dst"
+    weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
+  else:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "no_weight"
+
 
   epoch_times = []
   total_epoch_times = []
@@ -302,34 +448,27 @@ def sliding_window_evaluation(tgn,
 
   num_instances_shift = BATCH_SIZE * 1
 
-  # total_num_batch =  math.ceil(num_instance/BATCH_SIZE)
-  # init_num_batch = math.ceil((init_train_data)/BATCH_SIZE)
-  # left_num_batch = total_num_batch - init_num_batch
-
   total_num_ws =  math.ceil(num_instance/num_instances_shift)
   init_num_ws = math.ceil((init_train_data)/num_instances_shift)
   left_num_ws = total_num_ws - init_num_ws
 
   ef_iwf_window_dict = {}
+  nf_iwf_window_dict = {}
   pos_edges_weight = None
   neg_edges_weight = None
 
   for ws in range(left_num_ws):
 
     num_batch = math.ceil((init_train_data)/BATCH_SIZE)
-
-    # print(train_data.n_interactions, train_data.n_unique_nodes)
     logger.debug('-ws = {}'.format(ws))
+    logger_2.info('-ws = {}'.format(ws))
     ws_idx = ws
-    # logger.debug('-init_num_batch = {}'.format(init_num_batch))
-    # logger.debug('-left_num_batch = {}'.format(left_num_batch))
-    # logger.debug('--train_data per ws = {}'.format(train_data.sources[:init_train_data]))
-
     m_loss = []
     # for epoch in range(NUM_EPOCH):
     # epoch_ref_window_size =
     for epoch in range(5):
       logger.debug('--epoch = {}'.format(epoch))
+      logger_2.info('--epoch = {}'.format(epoch))
       start_epoch = time.time()
       ### Training :DOC:
 
@@ -364,22 +503,7 @@ def sliding_window_evaluation(tgn,
           if end_train_idx <= (num_instance - batch_ref_window_size):
             assert (end_train_hard_negative_idx - batch_ref_window_size) == end_train_idx
 
-          # print(num_batch, init_train_data, start_train_idx, end_train_idx)
-          # print('what?')
-
           assert start_train_idx < end_train_idx, "number of batch to run for each epoch was not set correctly."
-
-          # print(batch_idx)
-          # print(start_train_idx)
-          # print(end_train_idx)
-          # print('omg')
-
-          # logger.debug('----compute edges probabilitie')
-
-          # sources_batch, destinations_batch = train_data.sources[start_train_idx:end_train_idx], \
-          #                                     train_data.destinations[start_train_idx:end_train_idx]
-          # edge_idxs_batch = train_data.edge_idxs[start_train_idx: end_train_idx]
-          # timestamps_batch = train_data.timestamps[start_train_idx:end_train_idx]
 
           sources_batch, destinations_batch = full_data.sources[start_train_idx:end_train_idx], \
                                               full_data.destinations[start_train_idx:end_train_idx]
@@ -389,17 +513,7 @@ def sliding_window_evaluation(tgn,
           edge_hard_samples_batch = full_data.edge_idxs[start_train_idx:end_train_hard_negative_idx]
           timestamps_hard_samples_batch = full_data.timestamps[start_train_idx:end_train_hard_negative_idx]
 
-
-          # train_mask = timestamps <= val_time
-          # train_mask = timestamps < full_data.edge_idx[:init_train_data]
-          # train_mask = train_data.timestamps <= full_data.edge_idxs[end_train_idx]
-          # train_mask = train_data.timestamps <= full_data.timestamps[end_train_idx]
-          # train_mask = np.logical_and(full_data.timestamps <= full_data.timestamps[end_train_idx], observed_edges_mask)
           train_mask = full_data.timestamps < full_data.timestamps[end_train_idx]
-          # train_mask = np.logical_and(full_data.timestamps[start_train_idx] <  full_data.timestamps , full_data.timestamps < full_data.timestamps[end_train_idx])
-          # print(np.sum(train_mask))
-          # print('yii')
-          # exit()
 
           # Initialize training neighbor finder to retrieve temporal graph
           train_data = Data(full_data.sources[train_mask],
@@ -414,54 +528,34 @@ def sliding_window_evaluation(tgn,
           tgn.set_neighbor_finder(train_ngh_finder)
 
           size = len(sources_batch)
-          if True:
-            train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations, train_data.edge_idxs, batch_ref_window_size)
-            # observed_rand_sampler = RandEdgeSampler(observed_data.sources, observed_data.destinations)
 
-            _, negatives_batch = train_rand_sampler.sample(size)
+          train_rand_sampler = get_sampler(train_data, batch_ref_window_size, start_train_idx, end_train_hard_negative_idx, neg_sample_method)
 
+          negatives_src_batch, negatives_dst_batch = get_negative_nodes_batch(train_rand_sampler, BATCH_SIZE, size, neg_sample_method)
+
+          pos_label, neg_label = init_pos_neg_labels(size, device)
+          criterion = get_criterion()
+
+          # compute_edge_probability
+          if neg_edges_formation == "original_src_and_sampled_dst" :
+            pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_dst_batch,
+                                                                timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+          elif neg_edges_formation == "sampled_src_and_sampled_dst":
+            raise NotImplementedError
+            pos_prob, _ = tgn.compute_edge_probabilities(sources_batch, destinations_batch, _,
+                                                                timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+            _, neg_prob = tgn.compute_edge_probabilities(sources_batch, _, negatives_dst_batch,
+                                                                timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
           else:
-
-            train_rand_sampler = RandEdgeSampler_v2(train_data.sources, train_data.destinations, train_data.edge_idxs, batch_ref_window_size)
-
-            n_hard_negative = size
+            raise NotImplementedError()
 
 
-          with torch.no_grad():
-            pos_label = torch.ones(size, dtype=torch.float, device=device)
-            neg_label = torch.zeros(size, dtype=torch.float, device=device)
+          pos_edges_weight, neg_edges_weight = get_edges_weight(train_data, negatives_src_batch ,k, BATCH_SIZE, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, weighted_loss_method)
 
-          # tgn = tgn.train() # :DOC:
-          pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
-                                                              timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+          logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
+          logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
 
-          criterion = torch.nn.BCELoss
-
-          # assert use_weight == True
-          if k not in ef_iwf_window_dict:
-            if k > 1 and use_weight:
-              edges_ = np.vstack((train_data.sources, train_data.destinations)).T
-              start_past_window_idx = start_train_idx - BATCH_SIZE
-              end_past_window_idx = end_train_hard_negative_idx - BATCH_SIZE
-              edges_in_past_windows = edges_[:start_past_window_idx]
-              edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
-
-              ef_iwf, edges_to_ef_iwf_current_window_dict = compute_xf_iwf(edges_in_past_windows, edges_in_current_window , BATCH_SIZE, compute_as_nodes=False, return_x_value_dict=True)
-
-              ef_iwf_window_dict[k] = edges_to_ef_iwf_current_window_dict
-              pos_edges_weight = []
-              ef_iwf_current_window_dict = ef_iwf_window_dict[k]
-
-              for ii in edges_in_current_window:
-                pos_edges_weight.append(ef_iwf_current_window_dict[tuple(ii)])
-
-              pos_edges_weight = torch.FloatTensor(pos_edges_weight)
-
-          if k > 1 and use_weight:
-            loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
-          else:
-            loss += criterion()(pos_prob.squeeze(), pos_label) + criterion()(neg_prob.squeeze(), neg_label)
-
+          loss = compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg_edges_weight, batch_idx, criterion, loss, weighted_loss_method)
 
         loss /= args.backprop_every
 
@@ -579,7 +673,7 @@ def sliding_window_evaluation(tgn,
 
     # Training has finished, we have loaded the best model, and we want to backup its current
     # memory (which has seen validation edges) so that it can also be used when testing on unseen
-    # nodes
+
     if USE_MEMORY:
       val_memory_backup = tgn.memory.backup_memory()
 

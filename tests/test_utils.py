@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 
-from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window
+from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window, sigmoid
 
 import numpy as np
 import pytest
 import math
+import torch
 
 @pytest.mark.usefixtures("edges", "sources", "destination")
 def test_get_different_edges_mask_left(mocker, edges, sources, destination):
@@ -83,11 +84,13 @@ def test_compute_ef():
 
     edges_in_current_windows = edges[current_instances_idx:]
 
-    nf = compute_ef(edges_in_current_windows, window_size)
+    ef = compute_ef(edges_in_current_windows, window_size)
 
-    assert nf.shape[0] == 2
-    assert nf.sum() == 1
-    assert np.array_equal(nf, np.array([1,2])/3)
+    assert ef.shape[0] == 2
+    assert ef.sum() == 1
+    assert np.array_equal(ef, np.array([1,2])/3)
+    assert np.all(ef<=1)
+    assert np.all(ef>=0)
 
 def test_compute_nf():
     edges = np.array([[2,101],
@@ -112,12 +115,16 @@ def test_compute_nf():
     assert nf.shape[0] == 2
     assert nf.sum() == 1
     assert np.array_equal(nf, np.array([1,2])/3)
+    assert np.all(nf<=1)
+    assert np.all(nf>=0)
 
     nf = compute_nf(dst_in_current_windows, window_size)
 
     assert nf.shape[0] == 2
     assert nf.sum() == 1
     assert np.array_equal(nf, np.array([2,1])/3)
+    assert np.all(nf<=1)
+    assert np.all(nf>=0)
 
 
 def test_compute_n_window_containing_edges():
@@ -244,25 +251,31 @@ def test_compute_iwf():
     edges_in_current_window = edges[-window_size:]
 
 
-
     # ### test compute_as_nodes == True
     iwf = compute_iwf(src_in_past_windows, src_in_current_window, window_size)
-    print(iwf)
-    print(np.array(list(map(math.log,3/np.array([3])))))
-    assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([3])))))
-    assert sum(np.where(iwf==float('inf'))[0]) == 0
+    # print(iwf)
+    # print(np.array(list(map(math.log,3/np.array([3])))))
+    # assert np.array_equal(iwf, sigmoid(np.array(list(map(math.log,3/np.array([3]))))))
+    assert np.array_equal(iwf, np.array(list(map(math.log,3/np.array([3])))))
+    # assert sum(np.where(iwf==float('inf'))[0]) == 0
     assert iwf.min() >= 0
+    # assert iwf.max() <= 1
 
     iwf = compute_iwf(dst_in_past_windows, dst_in_current_window, window_size)
+    # assert np.array_equal(iwf,  sigmoid(np.array(list(map(math.log,3/np.array([2,2]))))))
     assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([2,2])))))
-    assert sum(np.where(iwf==float('inf'))[0]) == 0
+    # assert sum(np.where(iwf==float('inf'))[0]) == 0
     assert iwf.min() >= 0
+    # assert iwf.max() <= 1
 
     ### test compute_as_nodes == False
     iwf = compute_iwf(edges_in_past_windows, edges_in_current_window, window_size, compute_as_nodes=False)
+    # assert np.array_equal(iwf,  sigmoid(np.array(list(map(math.log,3/np.array([2,1]))))))
     assert np.array_equal(iwf,  np.array(list(map(math.log,3/np.array([2,1])))))
-    assert sum(np.where(iwf==float('inf'))[0]) == 0
+    # assert np.array_equal(iwf,  sigmoid(np.array([list(map(math.log,2/np.array([1])))[0], 999999 ])))
+    # assert sum(np.where(iwf==float('inf'))[0]) == 0
     assert iwf.min() >= 0
+    # assert iwf.max() <= 1
 
 def test_compute_xf_iwf():
     edges = np.array([[2,101],
@@ -289,12 +302,16 @@ def test_compute_xf_iwf():
 
     ### test 1
     nf_iwf = compute_xf_iwf(src_in_past_windows, src_in_current_window, window_size)
-    assert nf_iwf ==  1 + (np.array([2/2])) * (np.array(list(map(math.log,3/np.array([3])))))
+    # assert nf_iwf ==  1 + (np.array([2/2])) * sigmoid(np.array(list(map(math.log,3/np.array([3])))))
+    assert nf_iwf ==  1 + (np.array([2/2])) * np.array(list(map(math.log,3/np.array([3]))))
     assert np.all(nf_iwf >= 1)
+    assert np.all(nf_iwf <= 2)
 
     ef_iwf = compute_xf_iwf(edges_in_past_windows, edges_in_current_window, window_size, compute_as_nodes=False)
-    assert ef_iwf ==  1 + (np.array([2])/2) * (np.array(list(map(math.log,3/np.array([2])))))
+    # assert ef_iwf ==  1 + (np.array([2])/2) * sigmoid(np.array(list(map(math.log,3/np.array([2])))))
+    assert ef_iwf ==  1 + (np.array([2])/2) * np.array(list(map(math.log,3/np.array([2]))))
     assert np.all(ef_iwf >= 1)
+    assert np.all(nf_iwf <= 2)
 
     ### test 2
     current_uniq_nodes, _, _ = get_uniq_x_freq_in_window(src_in_current_window, compute_as_nodes=True)

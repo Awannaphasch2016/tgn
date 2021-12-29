@@ -46,7 +46,35 @@ def edges(sources ,destination):
             user_edges.append((i, j))
 
     edges = np.array(user_edges)
+    assert edges.shape[0] == 15
     assert edges.shape[1] == 2
+
+    return edges
+
+@pytest.fixture
+def fixed_edges(sources, destination):
+
+    edges = np.array([[1,505], [2,202],
+                        [2,202],
+                        [3,505],
+                        [3,202],
+
+                        [3,303],
+                        [4,404],
+                        [4,303],
+                        [4,404],
+                        [4,202],
+
+                        [5,101],
+                        [5,101],
+                        [5,505],
+                        [5,303],
+                        [5,404]])
+
+    for i in edges[:,0]:
+        assert i in sources
+    for i in edges[:,1]:
+        assert i in destination
     return edges
 
 @pytest.fixture

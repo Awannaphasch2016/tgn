@@ -64,7 +64,10 @@ parser.add_argument('--use_source_embedding_in_message', action='store_true',
 parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
 parser.add_argument('--use_ef_iwf_weight', action='store_true',
-                    help='Whether to run the dyrep model')
+                    help='use ef_iwf as weight of positive edges in BCE loss')
+parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
+                    help='use nf_iwf to rank user nodes to sample negative edges pair incident to user nodes.')
+
 
 
 def prep_args():
@@ -97,7 +100,8 @@ USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
 # use_weight = True
-use_weight = args.use_ef_iwf_weight
+# use_weight = args.use_ef_iwf_weight
+# use_nf_iwf_neg_sampling = args.use_nf_iwf_neg_sampling
 
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
@@ -105,21 +109,61 @@ MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
 get_checkpoint_path = lambda \
     epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
 
+
 ### set up logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+def setup_logger(formatter, name, log_file, level=logging.INFO):
+    """To setup as many loggers as you want"""
+
+    fh = logging.FileHandler(log_file)
+    fh.setFormatter(formatter)
+    # fh.terminator = ""
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.WARN)
+    ch.setFormatter(formatter)
+    # ch.terminator = ""
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
+
 Path("log/").mkdir(parents=True, exist_ok=True)
-fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
-fh.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.WARN)
+
+logging.basicConfig(level=logging.INFO)
+
+logger_name = "first_logger"
+log_time = str(time.time())
+log_file_name = 'log/{}.log'.format(log_time)
+log_level = logging.DEBUG
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
-logger.addHandler(fh)
-logger.addHandler(ch)
+
+logger = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+
+logger_name = "second_logger"
+log_file_name = 'log/nodes_and_edges_weight/{}.log'.format(log_time)
+log_level = logging.DEBUG
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+
 logger.info(args)
+
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger()
+# logger.setLevel(logging.DEBUG)
+# Path("log/").mkdir(parents=True, exist_ok=True)
+# fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
+# fh.setLevel(logging.DEBUG)
+# ch = logging.StreamHandler()
+# ch.setLevel(logging.WARN)
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# fh.setFormatter(formatter)
+# ch.setFormatter(formatter)
+# logger.addHandler(fh)
+# logger.addHandler(ch)
+# logger.info(args)
 
 
 # Set device
@@ -205,6 +249,7 @@ if __name__ == "__main__":
                               num_instance,
                               BATCH_SIZE,
                               logger,
+                              logger_2,
                               USE_MEMORY,
                               MODEL_SAVE_PATH,
                               args,
@@ -213,7 +258,6 @@ if __name__ == "__main__":
                               full_data,
                               device,
                               NUM_NEIGHBORS,
-                              use_weight=use_weight,
                               )
 
     # train_val_test_evaluation(tgn,
