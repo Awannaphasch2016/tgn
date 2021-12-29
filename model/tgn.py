@@ -98,6 +98,11 @@ class TGN(torch.nn.Module):
     self.affinity_score = MergeLayer(self.n_node_features, self.n_node_features,
                                      self.n_node_features,
                                      1)
+  def run_dyrep_model(self, source_nodes, destination_nodes, negative_nodes):
+    source_node_embedding = memory[source_nodes]
+    destination_node_embedding = memory[destination_nodes]
+    negative_node_embedding = memory[negative_nodes]
+    return  source_node_embedding,destination_node_embedding,negative_node_embedding
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, negative_nodes, edge_times,
                                   edge_idxs, n_neighbors=20):
@@ -122,6 +127,7 @@ class TGN(torch.nn.Module):
     memory = None
     time_diffs = None
     if self.use_memory:
+      # self.update_memory_at_start()
       if self.memory_update_at_start:
         # Update memory for all nodes with messages stored in previous batches
 
@@ -191,14 +197,12 @@ class TGN(torch.nn.Module):
         self.update_memory(unique_sources, source_id_to_messages)
         self.update_memory(unique_destinations, destination_id_to_messages)
 
+
       if self.dyrep:
-        source_node_embedding = memory[source_nodes]
-        destination_node_embedding = memory[destination_nodes]
-        negative_node_embedding = memory[negative_nodes]
-
-
+        source_node_embedding, destination_node_embedding, negative_node_embedding = self.run_dyrep_model(memory, source_nodes, destination_nodes, negative_nodes)
 
     return source_node_embedding, destination_node_embedding, negative_node_embedding
+
 
   def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20):
     """
