@@ -105,7 +105,7 @@ class TGN(torch.nn.Module):
     return  source_node_embedding,destination_node_embedding,negative_node_embedding
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                  edge_idxs, n_neighbors=20):
+                                  edge_idxs, sampled_source_nodes=None,n_neighbors=20):
     """
     Compute temporal embeddings for sources, destinations, and negatively sampled destinations.
 
@@ -120,9 +120,14 @@ class TGN(torch.nn.Module):
     """
 
     n_samples = len(source_nodes)
-    nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
+    # nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
+    if sampled_source_nodes is not None:
+      nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes, sampled_source_nodes])
+      timestamps = np.concatenate([edge_times, edge_times, edge_times, edge_times])
+    else:
+      nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
+      timestamps = np.concatenate([edge_times, edge_times, edge_times])
     positives = np.concatenate([source_nodes, destination_nodes])
-    timestamps = np.concatenate([edge_times, edge_times, edge_times])
 
     memory = None
     time_diffs = None
@@ -150,8 +155,17 @@ class TGN(torch.nn.Module):
         negative_nodes].long()
       negative_time_diffs = (negative_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
 
-      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
+      if sampled_source_nodes is not None:
+        sampled_sources_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
+          sampled_source_nodes].long()
+        sampled_sources_time_diffs = (sampled_sources_time_diffs - self.mean_time_shift_src) / self.std_time_shift_src
+
+      if sampled_source_nodes is not None:
+        time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs, sampled_sources_time_diffs],
                              dim=0)
+      else:
+         time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
+                                 dim=0)
 
     # :TODO: concatenate NF-INF to nodes features before apply node embedding. add NF-IWF column to node features.
     # Compute the embeddings using the embedding module
@@ -163,9 +177,15 @@ class TGN(torch.nn.Module):
                                                              n_neighbors=n_neighbors,
                                                              time_diffs=time_diffs)
 
-    source_node_embedding = node_embedding[:n_samples]
-    destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
-    negative_node_embedding = node_embedding[2 * n_samples:]
+    if sampled_source_nodes is not None:
+      source_node_embedding = node_embedding[:n_samples]
+      destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
+      negative_node_embedding = node_embedding[2 * n_samples:3*n_samples]
+      sampled_sources_node_embedding = node_embedding[3*n_samples:]
+    else:
+      source_node_embedding = node_embedding[:n_samples]
+      destination_node_embedding = node_embedding[n_samples: 2 * n_samples]
+      negative_node_embedding = node_embedding[2 * n_samples:]
 
     if self.use_memory:
       if self.memory_update_at_start:
@@ -199,12 +219,16 @@ class TGN(torch.nn.Module):
 
 
       if self.dyrep:
+        raise NotImplementedError()
         source_node_embedding, destination_node_embedding, negative_node_embedding = self.run_dyrep_model(memory, source_nodes, destination_nodes, negative_nodes)
 
-    return source_node_embedding, destination_node_embedding, negative_node_embedding
+    if sampled_source_nodes is not None:
+      return source_node_embedding, destination_node_embedding, negative_node_embedding, sampled_sources_node_embedding
+    else:
+      return source_node_embedding, destination_node_embedding, negative_node_embedding
 
 
-  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20):
+  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20, sampled_source_nodes=None):
     """
     Compute probabilities for edges between sources and destination and between sources and
     negatives by first computing temporal embeddings using the TGN encoder and then feeding them
@@ -219,13 +243,28 @@ class TGN(torch.nn.Module):
     """
 
     n_samples = len(source_nodes)
-    source_node_embedding, destination_node_embedding, negative_node_embedding = self.compute_temporal_embeddings(source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors)
 
-    score = self.affinity_score(torch.cat([source_node_embedding, source_node_embedding], dim=0),
-                                torch.cat([destination_node_embedding,
-                                           negative_node_embedding])).squeeze(dim=0)
-    pos_score = score[:n_samples]
-    neg_score = score[n_samples:]
+    if sampled_source_nodes is not None:
+
+      source_node_embedding, destination_node_embedding, negative_node_embedding, sampled_source_nodes_embedding = self.compute_temporal_embeddings(source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, sampled_source_nodes=sampled_source_nodes ,n_neighbors=n_neighbors )
+
+      assert source_node_embedding.shape[0] == n_samples
+      score = self.affinity_score(torch.cat([source_node_embedding, sampled_source_nodes_embedding], dim=0),
+                                  torch.cat([destination_node_embedding,
+                                            negative_node_embedding])).squeeze(dim=0)
+      pos_score = score[:n_samples]
+      neg_score = score[n_samples:]
+
+    else:
+
+      source_node_embedding, destination_node_embedding, negative_node_embedding = self.compute_temporal_embeddings(source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=n_neighbors)
+
+      score = self.affinity_score(torch.cat([source_node_embedding, source_node_embedding], dim=0),
+                                  torch.cat([destination_node_embedding,
+                                            negative_node_embedding])).squeeze(dim=0)
+      assert source_node_embedding.shape[0] == n_samples
+      pos_score = score[:n_samples]
+      neg_score = score[n_samples:]
 
     return pos_score.sigmoid(), neg_score.sigmoid()
 

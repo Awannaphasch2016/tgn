@@ -67,7 +67,10 @@ parser.add_argument('--use_ef_iwf_weight', action='store_true',
                     help='use ef_iwf as weight of positive edges in BCE loss')
 parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
                     help='use nf_iwf to rank user nodes to sample negative edges pair incident to user nodes.')
-
+parser.add_argument('--use_sigmoid_ef_iwf_weight', action='store_true',
+                    help='same as --use_ef_iwf_weight, but sigmoid is applied to compute ef_iwf ')
+parser.add_argument('--use_random_weight_to_benchmark_ef_iwf', action='store_true',
+                    help='orignal tgn but use random positive weight.')
 
 
 def prep_args():
@@ -248,6 +251,7 @@ if __name__ == "__main__":
     sliding_window_evaluation(tgn,
                               num_instance,
                               BATCH_SIZE,
+                              NUM_EPOCH,
                               logger,
                               logger_2,
                               USE_MEMORY,

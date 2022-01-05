@@ -27,7 +27,8 @@ def get_end_idx(current_window_idx, window_size):
 def compute_ef(edges_in_current_window, window_size):
   _, _, current_uniq_edges_freq =  get_uniq_edges_freq_in_window(edges_in_current_window)
 
-  ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
+  ef = current_uniq_edges_freq
+  # ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
 
   return ef
 
@@ -35,7 +36,8 @@ def compute_ef(edges_in_current_window, window_size):
 def compute_nf(nodes_in_current_window, window_size):
   current_src_uniq_nodes, _, current_src_uniq_nodes_freq =  get_uniq_nodes_freq_in_window(nodes_in_current_window)
 
-  nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
+  nf = current_src_uniq_nodes_freq
+  # nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
 
   return nf
 
@@ -131,7 +133,8 @@ def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_
   iwf[iwf_mask] = 999999 # replace inf value with very large number.
 
   # :NOTE: apply sigmoid function to set range of iwf to be [0,1]
-  # iwf = torch.nn.functional.sigmoid(torch.from_numpy(iwf)).cpu().detach().numpy()
+  # if compute_ef_iwf_with_sigmoid:
+  #   iwf = torch.nn.functional.sigmoid(torch.from_numpy(iwf)).cpu().detach().numpy()
 
   return iwf
 
@@ -143,7 +146,7 @@ def get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes):
   else:
     return get_uniq_edges_freq_in_window(x_in_current_window)
 
-def compute_xf_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=True, return_x_value_dict=False):
+def compute_xf_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=True, return_x_value_dict=False, compute_with_sigmoid=False):
 
   current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
 
@@ -153,7 +156,12 @@ def compute_xf_iwf(x_in_past_windows, x_in_current_window, window_size, compute_
     xf = compute_ef(x_in_current_window, window_size)
 
   iwf = compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=compute_as_nodes)
-  xf_iwf =  (xf * iwf) + 1 # garantee iwf value to always be > 1
+  xf_iwf =  (xf * iwf)
+
+  if compute_with_sigmoid:
+    xf_iwf = torch.nn.functional.sigmoid(torch.from_numpy(xf_iwf)).cpu().detach().numpy()
+
+  xf_iwf += 1 # garantee iwf value to always be > 1
 
   assert iwf.shape[0] == xf.shape[0]
   assert xf_iwf.shape[0] == iwf.shape[0]
