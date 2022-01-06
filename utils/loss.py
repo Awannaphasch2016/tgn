@@ -9,12 +9,14 @@ def select_decoder_and_loss(args,device,feat_dim, n_unique_labels):
         decoder = MLP(feat_dim, drop=args.drop_out)
         decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
         decoder = decoder.to(device)
-        decoder_loss_criterion = torch.nn.BCELoss()
+        # decoder_loss_criterion = torch.nn.BCELoss()
+        decoder_loss_criterion = torch.nn.BCELoss
     else:
         decoder = MLP_multiple_class(feat_dim, n_unique_labels ,drop=args.drop_out)
         decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
         decoder = decoder.to(device)
-        decoder_loss_criterion = torch.nn.CrossEntropyLoss()
+        # decoder_loss_criterion = torch.nn.CrossEntropyLoss()
+        decoder_loss_criterion = torch.nn.CrossEntropyLoss
     return decoder_optimizer, decoder, decoder_loss_criterion
 
 

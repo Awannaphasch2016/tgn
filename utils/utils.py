@@ -3,6 +3,88 @@ import torch
 from random import choices
 import random
 import math
+from  sklearn import preprocessing
+import pandas as pd
+
+def get_encoder(n_uniq_labels):
+  enc = preprocessing.OneHotEncoder()
+  enc.fit(pd.DataFrame(range(n_uniq_labels)))
+  return enc
+
+# def convert_to_onehot(labels, n_uniq_labels):
+#   one_hot = enc.transform(labels).toarray()
+#   return torch.Tensor(one_hot)
+
+def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, sampled_nodes=None):
+
+  start_past_window_idx = start_train_idx
+  end_past_window_idx = end_train_hard_negative_idx
+  nodes_in_past_windows = data.sources[:start_past_window_idx]
+  nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
+  src_nodes_weight = []
+
+  if batch_idx not in nf_iwf_window_dict:
+    nf_iwf, nodes_to_nf_iwf_current_window_dict = compute_xf_iwf(nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)
+    nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
+    # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
+
+  # :TODO: :HERE: there are two sampling cases:
+  # 1. original. (This case. sampled src may not be inside of nf_iwf_window_dict)
+  # 2. using EdgeSampler_NF_IWF. (This case nodes is garantee to be in the current window)
+  selected_nodes = nodes_in_current_window
+  if sampled_nodes is not None:
+    selected_nodes = sampled_nodes
+
+  for ii in selected_nodes:
+    src_nodes_weight.append(nf_iwf_window_dict[batch_idx][ii])
+
+  # assert len(src_nodes_weight) == nodes_in_current_window.shape[0]
+  src_nodes_weight = torch.FloatTensor(src_nodes_weight)
+
+  return src_nodes_weight
+
+def get_conditions_node_classification(args):
+  if args.use_nf_iwf_weight:
+    weighted_loss_method = 'nf_iwf_as_nodes_weight'
+  else:
+    weighted_loss_method = 'no_weight'
+
+  return weighted_loss_method
+
+def get_conditions(args):
+  if args.use_ef_iwf_weight:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_sigmoid_ef_iwf_weight:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = True
+  elif args.use_nf_iwf_neg_sampling:
+    neg_sample_method = "nf_iwf"
+    neg_edges_formation = "sampled_src_and_sampled_dst"
+    weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_random_weight_to_benchmark_ef_iwf:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "random_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
+  else:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "no_weight"
+    compute_xf_iwf_with_sigmoid = False
+
+  # conditions = {}
+  # conditions['neg_sample_method'] = neg_sample_method
+  # conditions['neg_edges_formation'] = neg_edges_formation
+  # conditions['weighted_loss_method'] = weighted_loss_method
+  # conditions['compute_xf_iwf_with_sigmoid'] = compute_xf_iwf_with_sigmoid
+
+  return neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
 
 def sigmoid(x):
   return torch.nn.functional.sigmoid(torch.from_numpy(x)).cpu().detach().numpy()

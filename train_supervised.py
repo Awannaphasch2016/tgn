@@ -13,7 +13,6 @@ import numpy as np
 from model.tgn import TGN
 from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class
 from utils.data_processing import compute_time_statistics, get_data_node_classification
-from utils.loss import select_decoder_and_loss
 from evaluation.eval_node_classification import train_val_test_evalulation_node_prediction, sliding_window_evaluation_node_prediction
 from utils.data_exploration import collect_burstiness_data_over_sliding_window, collect_burstiness_time_data_over_sliding_window
 
@@ -67,6 +66,16 @@ parser.add_argument('--n_neg', type=int, default=1)
 parser.add_argument('--use_validation', action='store_true',
                     help='Whether to use a validation set')
 parser.add_argument('--new_node', action='store_true', help='model new node')
+
+# anak's argument
+# parser.add_argument('--use_ef_iwf_weight', action='store_true',
+#                     help='use ef_iwf as weight of positive edges in BCE loss')
+# parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
+#                     help='use nf_iwf to rank user nodes to sample negative edges pair incident to user nodes.')
+parser.add_argument('--use_random_weight_to_benchmark_nf_iwf', action='store_true',
+                    help='orignal tgn but use random positive weight.')
+parser.add_argument('--use_nf_iwf_weight', action='store_true',
+                    help='use nf_iwf as weight of nodes')
 
 
 def prep_args():
@@ -203,9 +212,9 @@ if __name__ == "__main__":
     #   DATA
     #   )
 
-    feat_dim = node_features.shape[1]
-    n_unique_labels = full_data.n_unique_labels
-    decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels)
+    # feat_dim = node_features.shape[1]
+    # n_unique_labels = full_data.n_unique_labels
+    # decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels)
 
     # ## use with pre-training model to substitute prediction head
     # if train_data.n_unique_labels == 2:
@@ -259,9 +268,9 @@ if __name__ == "__main__":
       results_path,
       get_checkpoint_path,
       DATA,
-      decoder,
-      decoder_optimizer,
-      decoder_loss_criterion,
+      # decoder,
+      # decoder_optimizer,
+      # decoder_loss_criterion,
       NUM_EPOCH
       )
 

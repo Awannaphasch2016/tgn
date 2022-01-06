@@ -63,6 +63,8 @@ parser.add_argument('--use_source_embedding_in_message', action='store_true',
                     help='Whether to use the embedding of the source node as part of the message')
 parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
+
+# anak's argument
 parser.add_argument('--use_ef_iwf_weight', action='store_true',
                     help='use ef_iwf as weight of positive edges in BCE loss')
 parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',

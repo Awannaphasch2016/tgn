@@ -7,11 +7,13 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
 from random import choices
+from utils.utils import MLP, MLP_multiple_class
+import pandas as pd
 
 def accuracy(labels,  pred):
 
@@ -376,6 +378,55 @@ def train_val_test_evalulation_node_prediction(
     logger.info(f'test auc: {test_auc}, test acc: {test_acc}.\nconfusion matrix\n={cm}')
   logger.info(f'test acc: {test_acc}\nconfusion matrix\n={cm}')
 
+def cross_entropy_with_weighted_nodes(weight=None):
+  """
+  ref: https://www.google.com/imgres?imgurl=https%3A%2F%2Fi.stack.imgur.com%2FgNip2.png&imgrefurl=https%3A%2F%2Fstackoverflow.com%2Fquestions%2F41990250%2Fwhat-is-cross-entropy&tbnid=EvY6xhP4_fjHMM&vet=12ahUKEwiaqcfXy531AhUCEd8KHXVoAfEQMygAegUIARDTAQ..i&docid=mtdj-XG_g1QKxM&w=500&h=208&itg=1&q=cross%20entropy&ved=2ahUKEwiaqcfXy531AhUCEd8KHXVoAfEQMygAegUIARDTAQ
+
+  p(x) (aka labels) is one-hot
+  q(x) (aka preds) is probability distribution
+  -----
+  preds and labels are torch.tensor
+  preds shape is (instances, classes)
+  labels shape is (instances, classes)
+  instances_weight shape is (instances)
+  """
+
+  def loss(preds,labels):
+    assert weight is not None
+    instances_weight = weight
+    # labels = convert_to_onehot(labels)
+
+    return 0 - torch.sum(torch.mul(instances_weight, torch.sum(torch.mul(labels, torch.log(preds)), axis=1)))
+  return loss
+
+def select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss_method):
+  ## use with pre-training model to substitute prediction head
+
+  # if args.use_nf_iwf_weight:
+  if weighted_loss_method == "nf_iwf_as_nodes_weight":
+    if n_unique_labels == 2:
+      raise NotImplementedError()
+    else:
+      decoder = MLP_multiple_class(feat_dim, n_unique_labels ,drop=args.drop_out)
+      decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+      decoder = decoder.to(device)
+      decoder_loss_criterion = cross_entropy_with_weighted_nodes
+  elif weighted_loss_method == "no_weight":
+    if n_unique_labels == 2:
+      decoder = MLP(feat_dim, drop=args.drop_out)
+      decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+      decoder = decoder.to(device)
+      decoder_loss_criterion = torch.nn.BCELoss
+    else:
+      decoder = MLP_multiple_class(feat_dim, n_unique_labels ,drop=args.drop_out)
+      decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.lr)
+      decoder = decoder.to(device)
+      decoder_loss_criterion = torch.nn.CrossEntropyLoss
+  else:
+    raise NotImplementedError()
+
+  return decoder_optimizer, decoder, decoder_loss_criterion
+
 def sliding_window_evaluation_node_prediction(
     logger,
     MODEL_SAVE_PATH,
@@ -394,11 +445,18 @@ def sliding_window_evaluation_node_prediction(
     results_path,
     get_checkpoint_path,
     DATA,
-    decoder,
-    decoder_optimizer,
-    decoder_loss_criterion,
+    # decoder,
+    # decoder_optimizer,
+    # decoder_loss_criterion,
     NUM_EPOCH
     ):
+  #
+  weighted_loss_method = get_conditions_node_classification(args)
+
+  # get decoder and loss
+  feat_dim = node_features.shape[1]
+  n_unique_labels = full_data.n_unique_labels
+  decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss_method)
 
   num_instance = len(full_data.sources)
 
@@ -422,6 +480,9 @@ def sliding_window_evaluation_node_prediction(
   end_ws_idx = init_train_data # pointer for last index of previously added window
 
   selected_sources_to_label = []
+  nf_iwf_window_dict = {}
+
+  onehot_encoder = get_encoder(full_data.n_unique_labels)
 
   for ws in range(left_num_ws):
 
@@ -447,8 +508,6 @@ def sliding_window_evaluation_node_prediction(
       # Reinitialize memory of the model at the start of each epoch
       if USE_MEMORY:
         tgn.memory.__init_memory__()
-
-
 
       decoder = decoder.train()
 
@@ -477,31 +536,30 @@ def sliding_window_evaluation_node_prediction(
           total_labels_batch = labels_batch
 
 
+
           # size = len(sources_batch)
 
-          source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
-                                                                                        destinations_batch,
-                                                                                        destinations_batch,
-                                                                                        timestamps_batch,
-                                                                                        edge_idxs_batch,
-                                                                                        NUM_NEIGHBORS)
+          source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch, destinations_batch, destinations_batch, timestamps_batch, edge_idxs_batch, sampled_source_nodes=None, n_neighbors=NUM_NEIGHBORS)
 
           labels_batch = labels_batch[selected_sources_ind]
           sources_batch = sources_batch[selected_sources_ind]
+          # calculate sources weight from sources batch.
+          nodes_weight = get_nf_iwf(full_data, batch_idx, BATCH_SIZE, start_train_idx, end_train_idx, nf_iwf_window_dict)
+          nodes_weight_batch = nodes_weight[selected_sources_ind]
+
 
           if train_data.n_unique_labels == 2: # :NOTE: for readability, train_data should be replaced by full_data, but I am unsure about side effect.
             raise NotImplementedError
             pred = decoder(source_embedding).sigmoid()
             labels_batch_torch = torch.from_numpy(labels_batch).float().to(device)
-            decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+            decoder_loss = decoder_loss_criterion(weight=nodes_weight_batch)(pred, labels_batch_torch)
           elif train_data.n_unique_labels == 4:
             pred = decoder(source_embedding[selected_sources_ind]).softmax(dim=1) # :BUG: I am not sure if selected_sources_ind can be appplied here without effecting model learning
-            labels_batch_torch = torch.from_numpy(labels_batch).long().to(device)
-            decoder_loss = decoder_loss_criterion(pred, labels_batch_torch)
+            labels_batch_torch = torch.from_numpy(onehot_encoder.transform(pd.DataFrame(labels_batch)).toarray()).long().to(device)
+            decoder_loss = decoder_loss_criterion(weight=nodes_weight_batch)(pred, labels_batch_torch)
+            # loss += criterion()(pos_prob.squeeze(), pos_label) + criterion()(neg_prob.squeeze(), neg_label)
 
-          pred = pred_prob_to_pred_labels(pred.cpu().detach().numpy())
-
-
+          pred = pred_prob_to_pred_labels(pred.cpu().detach().numpy()) # :NOTE: not sure what this is used for.
 
           loss += decoder_loss.item()
 
@@ -606,7 +664,6 @@ def sliding_window_evaluation_node_prediction(
     # left_num_batch -= 1
     # init_num_batch += 1
     init_num_ws += 1
-
     begin_ws_idx = end_ws_idx
     end_ws_idx = min(init_num_ws * num_instances_shift, full_data.edge_idxs.shape[0]-1)
 

@@ -5,7 +5,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf, get_conditions, get_nf_iwf
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -336,35 +336,6 @@ def get_edges_weight(data, batch_idx, batch_size, start_train_idx, end_train_har
 
   return pos_edges_weight, neg_edges_weight
 
-def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, sampled_nodes=None):
-
-  start_past_window_idx = start_train_idx
-  end_past_window_idx = end_train_hard_negative_idx
-  nodes_in_past_windows = data.sources[:start_past_window_idx]
-  nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
-  src_nodes_weight = []
-
-  if batch_idx not in nf_iwf_window_dict:
-    nf_iwf, nodes_to_nf_iwf_current_window_dict = compute_xf_iwf(nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)
-    nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
-    # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
-
-  # :TODO: :HERE: there are two sampling cases:
-  # 1. original. (This case. sampled src may not be inside of nf_iwf_window_dict)
-  # 2. using EdgeSampler_NF_IWF. (This case nodes is garantee to be in the current window)
-  selected_nodes = nodes_in_current_window
-  if sampled_nodes is not None:
-    selected_nodes = sampled_nodes
-
-  for ii in selected_nodes:
-    src_nodes_weight.append(nf_iwf_window_dict[batch_idx][ii])
-
-  # assert len(src_nodes_weight) == nodes_in_current_window.shape[0]
-  src_nodes_weight = torch.FloatTensor(src_nodes_weight)
-
-  return src_nodes_weight
-
-
 def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, compute_xf_iwf_with_sigmoid=False):
 
   edges_ = np.vstack((data.sources, data.destinations)).T
@@ -417,6 +388,22 @@ def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg
 
   return loss
 
+def compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS):
+  # compute_edge_probability
+  if neg_edges_formation == "original_src_and_sampled_dst" :
+    pos_prob, neg_prob = model.compute_edge_probabilities(sources_batch, destinations_batch, negatives_dst_batch,
+                                                        timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+  elif neg_edges_formation == "sampled_src_and_sampled_dst":
+    # raise NotImplementedError
+    pos_prob, neg_prob = model.compute_edge_probabilities(sources_batch, destinations_batch, negatives_dst_batch,
+                                                        timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS, sampled_source_nodes=negatives_src_batch)
+    # _, neg_prob = tgn.compute_edge_probabilities(sources_batch, _, negatives_dst_batch,
+    #                                                     timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+  else:
+    raise NotImplementedError()
+
+  return pos_prob, neg_prob
+
 def sliding_window_evaluation(tgn,
                             num_instance,
                             BATCH_SIZE,
@@ -433,32 +420,7 @@ def sliding_window_evaluation(tgn,
                             NUM_NEIGHBORS):
 
   # :TODO: write test on these. raise exception for all cases that wasn't intended or designed for.
-  if args.use_ef_iwf_weight:
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
-    compute_xf_iwf_with_sigmoid = False
-  elif args.use_sigmoid_ef_iwf_weight:
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
-    compute_xf_iwf_with_sigmoid = True
-  elif args.use_nf_iwf_neg_sampling:
-    neg_sample_method = "nf_iwf"
-    neg_edges_formation = "sampled_src_and_sampled_dst"
-    weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
-    compute_xf_iwf_with_sigmoid = False
-  elif args.use_random_weight_to_benchmark_ef_iwf:
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "random_as_pos_edges_weight"
-    compute_xf_iwf_with_sigmoid = False
-  else:
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "no_weight"
-    compute_xf_iwf_with_sigmoid = False
-
+  neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid = get_conditions(args)
 
   epoch_times = []
   total_epoch_times = []
@@ -560,21 +522,10 @@ def sliding_window_evaluation(tgn,
           negatives_src_batch, negatives_dst_batch = get_negative_nodes_batch(train_rand_sampler, BATCH_SIZE, size, neg_sample_method)
 
           pos_label, neg_label = init_pos_neg_labels(size, device)
+
           criterion = get_criterion()
 
-          # compute_edge_probability
-          if neg_edges_formation == "original_src_and_sampled_dst" :
-            pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_dst_batch,
-                                                                timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
-          elif neg_edges_formation == "sampled_src_and_sampled_dst":
-            # raise NotImplementedError
-            pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_dst_batch,
-                                                                timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS, sampled_source_nodes=negatives_src_batch)
-            # _, neg_prob = tgn.compute_edge_probabilities(sources_batch, _, negatives_dst_batch,
-            #                                                     timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
-          else:
-            raise NotImplementedError()
-
+          pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(tgn, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
           pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid)
 
