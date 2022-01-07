@@ -493,11 +493,12 @@ def sliding_window_evaluation_node_prediction(
 
     m_loss = []
 
-    selected_sources_to_label_before = selected_sources_to_label.copy()
-    len_before = len(selected_sources_to_label_before)
+    # selected_sources_to_label_before = selected_sources_to_label.copy()
+    # len_before = len(selected_sources_to_label_before)
 
     selected_sources_ind,selected_sources_to_label = label_new_unique_nodes_with_budget(selected_sources_to_label, full_data, (begin_ws_idx, end_ws_idx))
-    assert selected_sources_to_label[:len_before] == selected_sources_to_label_before
+    # assert selected_sources_to_label[:len_before] == selected_sources_to_label_before
+    assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
 
     for epoch in range(NUM_EPOCH):
       logger.debug('--epoch = {}'.format(epoch))

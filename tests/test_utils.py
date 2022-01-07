@@ -1,12 +1,97 @@
 #!/usr/bin/env python3
 
 
-from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window, sigmoid
+from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window, sigmoid, find_nodes_ind_to_be_labelled, label_new_unique_nodes_with_budget, get_list_of_all_unique_nodes_to_be_labeled
 
+from utils.data_processing import get_data_node_classification
 import numpy as np
 import pytest
 import math
 import torch
+import random
+
+def test_find_nodes_ind_to_be_labelled():
+    selected_nodes_to_label = np.arange(10)
+    target_nodes_batch = np.array([2,2,4,4,1])
+    selected_sources_ind = find_nodes_ind_to_be_labelled(selected_nodes_to_label, target_nodes_batch)
+
+    assert np.unique(selected_nodes_to_label).shape[0] == selected_nodes_to_label.shape[0]
+    assert sum([True if i in selected_nodes_to_label else False for i in target_nodes_batch[selected_sources_ind]]) == len(selected_sources_ind)
+    assert max(selected_sources_ind) <= len(target_nodes_batch) - 1
+
+def test_get_list_of_all_unique_nodes_to_be_labeled():
+    selected_sources_to_label = np.arange(3).tolist()
+    n_unique_sources_to_add = 4
+    sources_batch = np.arange(3)
+
+    selected_sources_to_label = get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label,sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
+
+    selected_sources_to_label = np.arange(3).tolist()
+    n_unique_sources_to_add = 4
+    sources_batch = np.arange(4)
+
+    selected_sources_to_label = get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label,sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
+
+    selected_sources_to_label = np.arange(3).tolist()
+    n_unique_sources_to_add = 4
+    sources_batch = np.arange(7)
+
+    selected_sources_to_label = get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label,sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
+
+    selected_sources_to_label = np.arange(3).tolist()
+    n_unique_sources_to_add = 4
+    sources_batch = np.arange(10)
+
+    selected_sources_to_label = get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label,sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
+
+def test_get_unique_sources_ind_to_be_added():
+    new_sources = np.array([101,202])
+    sources_batch = np.arange(5)
+    n_unique_sourecs_to_add = 3
+    selected_sources_to_label = np.arange(3).tolist()
+
+    assert np.intersect1d(new_sources, sources_batch).shape[0] == 0
+
+    unique_sources_ind_to_add = get_unique_sources_ind_to_be_added(new_sources, sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(unique_sources_ind_to_add).shape[0] == len(unique_sources_ind_to_add)
+    assert len(new_sources[unique_sources_ind_to_add]) == np.unique(new_sources[unique_sources_ind_to_add]).shape[0]
+    assert np.intersect1d(selected_sources_to_label, new_sources[unique_sources_ind_to_add]).shape[0] == 0
+
+    new_sources = np.array([101,202])
+    sources_batch = np.arange(5)
+    n_unique_sourecs_to_add = 1
+    selected_sources_to_label = np.arange(3).tolist()
+
+    assert np.intersect1d(new_sources, sources_batch).shape[0] == 0
+
+    unique_sources_ind_to_add = get_unique_sources_ind_to_be_added(new_sources, sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(unique_sources_ind_to_add).shape[0] == len(unique_sources_ind_to_add)
+    assert len(new_sources[unique_sources_ind_to_add]) == np.unique(new_sources[unique_sources_ind_to_add]).shape[0]
+    assert np.intersect1d(selected_sources_to_label, new_sources[unique_sources_ind_to_add]).shape[0] == 0
+
+    new_sources = np.array([101,202])
+    sources_batch = np.arange(5)
+    n_unique_sourecs_to_add = 0
+    selected_sources_to_label = np.arange(3).tolist()
+
+    assert np.intersect1d(new_sources, sources_batch).shape[0] == 0
+
+    unique_sources_ind_to_add = get_unique_sources_ind_to_be_added(new_sources, sources_batch, n_unique_sources_to_add)
+
+    assert np.unique(unique_sources_ind_to_add).shape[0] == len(unique_sources_ind_to_add)
+    assert len(new_sources[unique_sources_ind_to_add]) == np.unique(new_sources[unique_sources_ind_to_add]).shape[0]
+    assert np.intersect1d(selected_sources_to_label, new_sources[unique_sources_ind_to_add]).shape[0] == 0
+
 
 @pytest.mark.usefixtures("edges", "sources", "destination")
 def test_get_different_edges_mask_left(mocker, edges, sources, destination):

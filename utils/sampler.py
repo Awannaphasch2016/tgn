@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from utils.utils import get_edges_dtype, get_different_edges_mask_left, compute_nf, get_uniq_nodes_freq_in_window, compute_xf_iwf
+from utils.utils import get_edges_dtype, get_different_edges_mask_left, compute_nf, get_uniq_nodes_freq_in_window
 import numpy as np
 import torch
 from random import choices

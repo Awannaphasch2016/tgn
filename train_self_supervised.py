@@ -73,6 +73,8 @@ parser.add_argument('--use_sigmoid_ef_iwf_weight', action='store_true',
                     help='same as --use_ef_iwf_weight, but sigmoid is applied to compute ef_iwf ')
 parser.add_argument('--use_random_weight_to_benchmark_ef_iwf', action='store_true',
                     help='orignal tgn but use random positive weight.')
+parser.add_argument('--run_tuning', action='store_true',
+                    help='run hyperparameter tuning.')
 
 
 def prep_args():
@@ -104,6 +106,7 @@ TIME_DIM = args.time_dim
 USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
+
 # use_weight = True
 # use_weight = args.use_ef_iwf_weight
 # use_nf_iwf_neg_sampling = args.use_nf_iwf_neg_sampling
@@ -175,36 +178,37 @@ logger.info(args)
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-if __name__ == "__main__":
-  ### Extract data for training, validation and testing
-  node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
-  new_node_test_data, timestamps, observed_edges_mask = get_data(DATA,
-                                different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
+def run_model(args,
+            # logger
+            logger,
+            logger_2,
+            # data
+            full_data,
+            # code params
+            node_features,
+            edge_features,
+            mean_time_shift_src,
+            std_time_shift_src,
+            mean_time_shift_dst,
+            std_time_shift_dst,
+            device,
+            MODEL_SAVE_PATH,):
 
-
-  # # Initialize training neighbor finder to retrieve temporal graph
-  # train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
-
-  # # Initialize validation and test neighbor finder to retrieve temporal graph
-  # full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
-
-  # # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
-  # # across different runs
-  # # NB: in the inductive setting, negatives are sampled only amongst other new nodes
-  # train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
-  # val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-  # nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
-  #                                       seed=1)
-  # test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-  # nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
-  #                                        new_node_test_data.destinations,
-  #                                        seed=3)
-
-
-  # Compute time statistics
-  mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
-    compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
-
+  BATCH_SIZE = args.bs
+  NUM_NEIGHBORS = args.n_degree
+  NUM_NEG = 1
+  NUM_EPOCH = args.n_epoch
+  NUM_HEADS = args.n_head
+  DROP_OUT = args.drop_out
+  GPU = args.gpu
+  DATA = args.data
+  NUM_LAYER = args.n_layer
+  LEARNING_RATE = args.lr
+  NODE_DIM = args.node_dim
+  TIME_DIM = args.time_dim
+  USE_MEMORY = args.use_memory
+  MESSAGE_DIM = args.message_dim
+  MEMORY_DIM = args.memory_dim
 
   for i in range(args.n_runs):
     results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
@@ -288,3 +292,100 @@ if __name__ == "__main__":
     #                           get_checkpoint_path,
     #                           results_path
     #                           )
+if __name__ == "__main__":
+  ### Extract data for training, validation and testing
+  node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
+  new_node_test_data, timestamps, observed_edges_mask = get_data(DATA,
+                                different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
+
+
+  # # Initialize training neighbor finder to retrieve temporal graph
+  # train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
+
+  # # Initialize validation and test neighbor finder to retrieve temporal graph
+  # full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
+
+  # # Initialize negative samplers. Set seeds for validation and testing so negatives are the same
+  # # across different runs
+  # # NB: in the inductive setting, negatives are sampled only amongst other new nodes
+  # train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
+  # val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
+  # nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
+  #                                       seed=1)
+  # test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
+  # nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
+  #                                        new_node_test_data.destinations,
+  #                                        seed=3)
+
+
+  # Compute time statistics
+  mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
+    compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
+
+  def run_tuning():
+    config = {
+        "n_epoch": tune.choice([5, 10, 50]),
+        "batch_size": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
+        # "lr": tune.loguniform(1e-4, 1e-1),
+        "batch_size": tune.choice([2, 4, 8, 16])
+    }
+    scheduler = ASHAScheduler(
+        metric="loss",
+        mode="min",
+        max_t=max_num_epochs,
+        grace_period=1,
+        reduction_factor=2)
+    reporter = CLIReporter(
+        # parameter_columns=["l1", "l2", "lr", "batch_size"],
+        metric_columns=["loss", "accuracy", "training_iteration"])
+    result = tune.run(
+        partial(train_cifar, data_dir=data_dir),
+        resources_per_trial={"cpu": 2, "gpu": gpus_per_trial},
+        config=config,
+        num_samples=num_samples,
+        scheduler=scheduler,
+        progress_reporter=reporter)
+
+    # best_trial = result.get_best_trial("loss", "min", "last")
+    # print("Best trial config: {}".format(best_trial.config))
+    # print("Best trial final validation loss: {}".format(
+    #     best_trial.last_result["loss"]))
+    # print("Best trial final validation accuracy: {}".format(
+    #     best_trial.last_result["accuracy"]))
+
+    # best_trained_model = Net(best_trial.config["l1"], best_trial.config["l2"])
+    # device = "cpu"
+    # if torch.cuda.is_available():
+    #     device = "cuda:0"
+    #     if gpus_per_trial > 1:
+    #         best_trained_model = nn.DataParallel(best_trained_model)
+    # best_trained_model.to(device)
+
+    # best_checkpoint_dir = best_trial.checkpoint.value
+    # model_state, optimizer_state = torch.load(os.path.join(
+    #     best_checkpoint_dir, "checkpoint"))
+    # best_trained_model.load_state_dict(model_state)
+
+    # test_acc = test_accuracy(best_trained_model, device)
+    # print("Best trial test set accuracy: {}".format(test_acc))
+
+  if args.run_tuning:
+    run_tuning()
+  else:
+    run_model(args,
+              # logger
+              logger,
+              logger_2,
+              # data
+              full_data,
+              # code params
+              node_features,
+              edge_features,
+              mean_time_shift_src,
+              std_time_shift_src,
+              mean_time_shift_dst,
+              std_time_shift_dst,
+              # config params
+              device,
+              MODEL_SAVE_PATH,
+              )

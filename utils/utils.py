@@ -28,7 +28,7 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
     nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
     # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
 
-  # :TODO: :HERE: there are two sampling cases:
+  # there are two sampling cases:
   # 1. original. (This case. sampled src may not be inside of nf_iwf_window_dict)
   # 2. using EdgeSampler_NF_IWF. (This case nodes is garantee to be in the current window)
   selected_nodes = nodes_in_current_window
@@ -336,6 +336,40 @@ def find_nodes_ind_to_be_labelled(selected_nodes_to_label, target_nodes_batch):
     selected_nodes_ind.extend(np.where(target_nodes_batch == ll)[0].tolist())
   return selected_nodes_ind
 
+def get_unique_sources_ind_to_be_added(new_sources, sources_batch, n_unique_sources_to_add):
+  unique_sources_ind = np.unique(new_sources, return_index=True)[1]
+
+  if unique_sources_ind.shape[0] < n_unique_sources_to_add:
+    unique_sources_ind_to_add = unique_sources_ind
+  else:
+    unique_sources_ind_to_add = random.sample(unique_sources_ind.tolist(),n_unique_sources_to_add)
+
+  return unique_sources_ind_to_add
+
+def get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label, sources_batch, n_unique_sources_to_add):
+
+  # create mask for new batch
+  if n_unique_sources_to_add > 0:
+    selected_sources_to_label_batch_mask = np.array([False for i in range(sources_batch.shape[0])])
+    if len(selected_sources_to_label) > 0:
+      selected_sources_to_label_batch_mask = np.array(list(map(lambda x: x in selected_sources_to_label, sources_batch)))
+
+    new_sources = sources_batch[~selected_sources_to_label_batch_mask]
+    # existing_sources = sources_batch[selected_sources_to_label_batch_mask]
+    # assert np.intersect1d(existing_sources, new_sources).shape[0] == 0
+
+    unique_sources_ind_to_add = None
+
+    # after mask is applied, random pick new unique node.
+    if new_sources.shape[0] > 0:
+      unique_sources_ind_to_add = get_unique_sources_ind_to_be_added(new_sources, sources_batch, n_unique_sources_to_add)
+      selected_sources_to_label.extend(new_sources[unique_sources_ind_to_add])
+
+      assert np.unique(selected_sources_to_label).shape[0] == len(selected_sources_to_label)
+
+  return selected_sources_to_label
+
+
 # def label_new_unique_nodes_with_budget(selected_sources_to_label, data, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, labels_batch):
 def label_new_unique_nodes_with_budget(selected_sources_to_label, data, begin_end_idx_pair=None):
   assert len(begin_end_idx_pair) == 2
@@ -360,23 +394,14 @@ def label_new_unique_nodes_with_budget(selected_sources_to_label, data, begin_en
   n_unique_sources_to_add = total_selected_sources - len(selected_sources_to_label)
   assert n_unique_sources_to_add >= 0
   assert n_unique_sources_to_add < data.n_unique_sources
-  # create mask for new batch
-  if n_unique_sources_to_add > 0:
-    selected_sources_to_label_batch_mask = np.array([False for i in range(sources_batch.shape[0])])
-    if len(selected_sources_to_label) > 0:
-      selected_sources_to_label_batch_mask = np.array(list(map(lambda x: x in selected_sources_to_label, sources_batch)))
-
-    new_sources = sources_batch[~selected_sources_to_label_batch_mask]
-    # after mask is applied, random pick new unique node.
-    if new_sources.shape[0] > 0:
-      unique_sources_ind = np.unique(new_sources, return_index=True)[1]
-      unique_sources_ind_to_add = choices(unique_sources_ind, k=n_unique_sources_to_add)
-      selected_sources_to_label.extend(sources_batch[unique_sources_ind_to_add])
-  assert len(selected_sources_to_label) > 0
 
   # label nodes that are in sources_batch.
-  selected_sources_ind = find_nodes_ind_to_be_labelled(selected_sources_to_label, sources_batch)
+  # selected_sources_ind = find_nodes_ind_to_be_labelled(selected_sources_to_label, sources_batch)
+  selected_sources_to_label =  get_list_of_all_unique_nodes_to_be_labeled(selected_sources_to_label,sources_batch, n_unique_sources_to_add)
 
+  selected_sources_ind = find_nodes_ind_to_be_labelled(
+    selected_sources_to_label ,
+    sources_batch)
 
   return selected_sources_ind, selected_sources_to_label
 

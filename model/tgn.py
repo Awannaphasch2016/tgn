@@ -192,6 +192,10 @@ class TGN(torch.nn.Module):
         # Persist the updates to the memory only for sources and destinations (since now we have
         # new messages for them)
         self.update_memory(positives, self.memory.messages)
+        # self.logger.info(f'memory = {memory[positives]}')
+        # self.logger.info(f'past memory = {self.memory.get_memory(positives)}')
+        # self.logger.info(f'memory diff = {memory[positives] - self.memory.get_memory(positives)}')
+        self.logger.info(f'memory diff mean = {torch.mean(memory[positives] - self.memory.get_memory(positives))}')
         assert torch.allclose(memory[positives], self.memory.get_memory(positives), atol=1e-5), \
           "Something wrong in how the memory was updated, "
 
