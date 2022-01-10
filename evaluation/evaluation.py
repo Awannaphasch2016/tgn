@@ -5,7 +5,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf, get_conditions, get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf, get_conditions, get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -340,15 +340,6 @@ def get_edges_weight(data, batch_idx, batch_size, start_train_idx, end_train_har
     raise NotImplementedError()
 
   return pos_edges_weight, neg_edges_weight
-
-def get_share_selected_random_weight_per_window(batch_size, batch_idx, share_selected_random_weight_per_window_dict):
-
-  share_selected_random_weight_per_window_dict = add_only_new_values_of_new_window_to_dict(compute_share_selected_random_weight_per_window, batch_size)(
-      batch_idx,
-      share_selected_random_weight_per_window_dict,
-      None
-    )
-  return share_selected_random_weight_per_window_dict[batch_idx]
 
 def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, compute_xf_iwf_with_sigmoid=False):
 

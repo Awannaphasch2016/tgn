@@ -11,7 +11,7 @@ import torch
 import numpy as np
 
 from model.tgn import TGN
-from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class
+from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class, setup_logger
 from utils.data_processing import compute_time_statistics, get_data_node_classification
 from evaluation.eval_node_classification import train_val_test_evalulation_node_prediction, sliding_window_evaluation_node_prediction
 from utils.data_exploration import collect_burstiness_data_over_sliding_window, collect_burstiness_time_data_over_sliding_window
@@ -76,6 +76,8 @@ parser.add_argument('--use_random_weight_to_benchmark_nf_iwf', action='store_tru
                     help='orignal tgn but use random positive weight.')
 parser.add_argument('--use_nf_iwf_weight', action='store_true',
                     help='use nf_iwf as weight of nodes')
+parser.add_argument('--use_random_weight_to_benchmark_nf_iwf_1', action='store_true',
+                    help='orignal tgn but use random positive weight such that all instances in each window shares same weight, but each window will be assigned weight randomly.')
 
 
 def prep_args():
@@ -120,18 +122,36 @@ get_checkpoint_path = lambda \
 
 ### set up logger
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
-fh.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.WARN)
+
+logger_name = "first_logger"
+log_time = str(time.time())
+log_file_name = 'log/{}.log'.format(log_time)
+log_level = logging.DEBUG
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
-logger.addHandler(fh)
-logger.addHandler(ch)
+
+logger = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+
+logger_name = "second_logger"
+log_file_name = 'log/nodes_and_edges_weight/{}.log'.format(log_time)
+log_level = logging.DEBUG
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+
 logger.info(args)
+logger_2.info(args)
+
+# logger = logging.getLogger()
+# logger.setLevel(logging.DEBUG)
+# fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
+# fh.setLevel(logging.DEBUG)
+# ch = logging.StreamHandler()
+# ch.setLevel(logging.WARN)
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# fh.setFormatter(formatter)
+# ch.setFormatter(formatter)
+# logger.addHandler(fh)
+# logger.addHandler(ch)
+# logger.info(args)
 
 # Set device
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
@@ -252,6 +272,7 @@ if __name__ == "__main__":
 
     sliding_window_evaluation_node_prediction(
       logger,
+      logger_2,
       MODEL_SAVE_PATH,
       tgn,
       device,

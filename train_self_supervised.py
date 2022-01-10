@@ -10,7 +10,7 @@ from pathlib import Path
 
 from evaluation.evaluation import eval_edge_prediction, sliding_window_evaluation, train_val_test_evaluation
 from model.tgn import TGN
-from utils.utils import EarlyStopMonitor
+from utils.utils import EarlyStopMonitor, setup_logger
 from utils.data_processing import get_data, compute_time_statistics, Data
 
 torch.manual_seed(0)
@@ -119,29 +119,9 @@ MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
 get_checkpoint_path = lambda \
     epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
 
-
-### set up logger
-def setup_logger(formatter, name, log_file, level=logging.INFO):
-    """To setup as many loggers as you want"""
-
-    fh = logging.FileHandler(log_file)
-    fh.setFormatter(formatter)
-    # fh.terminator = ""
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.WARN)
-    ch.setFormatter(formatter)
-    # ch.terminator = ""
-
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-
-    return logger
-
 Path("log/").mkdir(parents=True, exist_ok=True)
 
+# set up logger
 logging.basicConfig(level=logging.INFO)
 
 logger_name = "first_logger"
@@ -159,6 +139,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
 
 logger.info(args)
+logger_2.info(args)
 
 # logging.basicConfig(level=logging.INFO)
 # logger = logging.getLogger()

@@ -7,13 +7,14 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder, get_share_selected_random_weight_per_window
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
 from random import choices
 from utils.utils import MLP, MLP_multiple_class
 import pandas as pd
+import random
 
 def accuracy(labels,  pred):
 
@@ -403,7 +404,7 @@ def select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss
   ## use with pre-training model to substitute prediction head
 
   # if args.use_nf_iwf_weight:
-  if weighted_loss_method == "nf_iwf_as_nodes_weight":
+  if weighted_loss_method in ["nf_iwf_as_nodes_weight", "random_as_node_weight", "share_selected_random_weight_per_window"]:
     if n_unique_labels == 2:
       raise NotImplementedError()
     else:
@@ -427,8 +428,34 @@ def select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss
 
   return decoder_optimizer, decoder, decoder_loss_criterion
 
+def get_nodes_weight(full_data, batch_idx, batch_size, start_train_idx, end_train_idx, nf_iwf_window_dict, n_unique_labels, weighted_loss_method, share_selected_random_weight_per_window_dict):
+
+  nodes_weight = None
+
+  if n_unique_labels == 2:
+    raise NotImplementedError()
+  elif n_unique_labels == 4:
+    # if args.use_nf_iwf_weight:
+    if weighted_loss_method == "nf_iwf_as_nodes_weight":
+      # calculate sources weight from sources batch.
+      nodes_weight = get_nf_iwf(full_data, batch_idx, batch_size, start_train_idx, end_train_idx, nf_iwf_window_dict)
+    elif weighted_loss_method == "random_as_node_weight":
+      nodes_weight = [random.randint(0,500) for i in range(batch_size)]
+      nodes_weight = torch.FloatTensor(nodes_weight)
+    elif weighted_loss_method == "share_selected_random_weight_per_window":
+      nodes_weight = get_share_selected_random_weight_per_window(batch_size, batch_idx, share_selected_random_weight_per_window_dict)
+    elif weighted_loss_method == "no_weight":
+      pass
+    else:
+      raise NotImplementedError()
+  else:
+    raise NotImplementedError()
+
+  return nodes_weight
+
 def sliding_window_evaluation_node_prediction(
     logger,
+    logger_2,
     MODEL_SAVE_PATH,
     tgn,
     device,
@@ -481,6 +508,7 @@ def sliding_window_evaluation_node_prediction(
 
   selected_sources_to_label = []
   nf_iwf_window_dict = {}
+  share_selected_random_weight_per_window_dict = {}
 
   onehot_encoder = get_encoder(full_data.n_unique_labels)
 
@@ -489,6 +517,7 @@ def sliding_window_evaluation_node_prediction(
     num_batch = math.ceil((end_ws_idx)/BATCH_SIZE)
 
     logger.debug('-ws = {}'.format(ws))
+    logger_2.info('--ws = {}'.format(ws))
     ws_idx = ws
 
     m_loss = []
@@ -502,6 +531,7 @@ def sliding_window_evaluation_node_prediction(
 
     for epoch in range(NUM_EPOCH):
       logger.debug('--epoch = {}'.format(epoch))
+      logger_2.info('--epoch = {}'.format(epoch))
       start_epoch = time.time()
 
       ### Training　
@@ -544,10 +574,15 @@ def sliding_window_evaluation_node_prediction(
 
           labels_batch = labels_batch[selected_sources_ind]
           sources_batch = sources_batch[selected_sources_ind]
-          # calculate sources weight from sources batch.
-          nodes_weight = get_nf_iwf(full_data, batch_idx, BATCH_SIZE, start_train_idx, end_train_idx, nf_iwf_window_dict)
-          nodes_weight_batch = nodes_weight[selected_sources_ind]
 
+          nodes_weight = get_nodes_weight(full_data, batch_idx, BATCH_SIZE, start_train_idx, end_train_idx, nf_iwf_window_dict, n_unique_labels, weighted_loss_method, share_selected_random_weight_per_window_dict)
+
+          logger_2.info(f'nodes_weight = {nodes_weight}')
+
+          # # calculate sources weight from sources batch.
+          # nodes_weight = get_nf_iwf(full_data, batch_idx, BATCH_SIZE, start_train_idx, end_train_idx, nf_iwf_window_dict)
+
+          nodes_weight_batch = nodes_weight[selected_sources_ind]
 
           if train_data.n_unique_labels == 2: # :NOTE: for readability, train_data should be replaced by full_data, but I am unsure about side effect.
             raise NotImplementedError

@@ -5,6 +5,40 @@ import random
 import math
 from  sklearn import preprocessing
 import pandas as pd
+import logging
+
+def setup_logger(formatter, name, log_file, level=logging.INFO):
+    """
+    To setup as many loggers as you want
+
+    :NOTE: I am not sure if refactor setup_logger from train_self_supervised into utils will results in information being logged  and stoed correctly. lets run first and I will inspect the results.
+    """
+
+    fh = logging.FileHandler(log_file)
+    fh.setFormatter(formatter)
+    # fh.terminator = ""
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.WARN)
+    ch.setFormatter(formatter)
+    # ch.terminator = ""
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
+
+
+def get_share_selected_random_weight_per_window(batch_size, batch_idx, share_selected_random_weight_per_window_dict):
+
+  share_selected_random_weight_per_window_dict = add_only_new_values_of_new_window_to_dict(compute_share_selected_random_weight_per_window, batch_size)(
+      batch_idx,
+      share_selected_random_weight_per_window_dict,
+      None
+    )
+  return share_selected_random_weight_per_window_dict[batch_idx]
 
 def compute_share_selected_random_weight_per_window(batch_size):
   selected_rand_weight = random.choices(list(range(500)), k=1)
@@ -74,6 +108,8 @@ def get_conditions_node_classification(args):
     weighted_loss_method = 'nf_iwf_as_nodes_weight'
   elif args.use_random_weight_to_benchmark_nf_iwf:
     weighted_loss_method = 'random_as_node_weight'
+  elif args.use_random_weight_to_benchmark_nf_iwf_1:
+    weighted_loss_method = "share_selected_random_weight_per_window"
   else:
     weighted_loss_method = 'no_weight'
 
