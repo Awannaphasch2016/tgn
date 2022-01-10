@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 
-from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window, sigmoid, find_nodes_ind_to_be_labelled, label_new_unique_nodes_with_budget, get_list_of_all_unique_nodes_to_be_labeled
+from utils.utils import get_different_edges_mask_left, get_uniq_nodes_freq_in_window, get_uniq_edges_freq_in_window, compute_nf, compute_ef, compute_iwf, compute_n_window_containing_nodes, compute_n_window_containing_edges, compute_iwf, convert_dict_values_to_np, compute_xf_iwf, get_uniq_x_freq_in_window, sigmoid, find_nodes_ind_to_be_labelled, label_new_unique_nodes_with_budget, get_list_of_all_unique_nodes_to_be_labeled, add_only_new_values_of_new_window_to_dict, get_unique_sources_ind_to_be_added, compute_iwf_from_wf
 
 from utils.data_processing import get_data_node_classification
 import numpy as np
@@ -9,6 +9,105 @@ import pytest
 import math
 import torch
 import random
+
+def test_add_only_new_values_of_new_window_to_dict():
+
+    def generate_new_number(a_range, k=3):
+        return random.choices(range(a_range), k=k)
+
+    def generate_new_number_1(a_range, k=3):
+        return random.choices(range(a_range), k=k), "random text"
+
+    args_list = [10]
+    kwargs_dict = {
+        "k": 10
+        }
+
+    # test 1
+    a_dict = {
+        1: [1,1,1],
+        2: [2,2,2]
+        }
+    func = generate_new_number
+    batch_idx = 1
+    param_idx = None
+    tmp = a_dict.copy()
+    a_dict = add_only_new_values_of_new_window_to_dict(func, *args_list, **kwargs_dict)(
+        batch_idx,
+        a_dict,
+        param_idx
+        )
+    assert list(a_dict.keys()) == list(tmp.keys())
+    for i,v in a_dict.items():
+        assert v == tmp[i]
+
+    # test 2
+    a_dict = {
+        1: [1,1,1],
+        2: [2,2,2]
+        }
+    func = generate_new_number
+    batch_idx = 3
+    param_idx = None
+    tmp = a_dict.copy()
+    a_dict = add_only_new_values_of_new_window_to_dict(func, *args_list, **kwargs_dict)(
+        batch_idx,
+        a_dict,
+        # idx_of_parameter_to_return_from_func=param_idx
+        param_idx
+        )
+    assert set(a_dict.keys()).difference(set(tmp.keys())) == {batch_idx}
+    for i,v in tmp.items():
+        assert v == a_dict[i]
+
+    # test 3
+    a_dict = {
+        1: [1,1,1],
+        2: [2,2,2]
+        }
+    func = generate_new_number
+    batch_idx = 3
+    param_idx = 1
+    tmp = a_dict.copy()
+    with pytest.raises(AssertionError):
+        a_dict = add_only_new_values_of_new_window_to_dict(func, *args_list, **kwargs_dict)(
+            batch_idx,
+            a_dict,
+            param_idx
+            )
+
+    # test 4
+    a_dict = {
+        1: [1,1,1],
+        2: [2,2,2]
+        }
+    func = generate_new_number_1
+    batch_idx = 3
+    param_idx = 0
+    tmp = a_dict.copy()
+    a_dict = add_only_new_values_of_new_window_to_dict(func, *args_list, **kwargs_dict)(
+        batch_idx,
+        a_dict,
+        param_idx
+        )
+
+    # test 5
+    a_dict = {
+        1: [1,1,1],
+        2: [2,2,2]
+        }
+    func = generate_new_number_1
+    batch_idx = 3
+    param_idx = None
+    tmp = a_dict.copy()
+    with pytest.raises(AssertionError):
+        a_dict = add_only_new_values_of_new_window_to_dict(func, *args_list, **kwargs_dict)(
+            batch_idx,
+            a_dict,
+            param_idx
+            )
+
+
 
 def test_find_nodes_ind_to_be_labelled():
     selected_nodes_to_label = np.arange(10)
@@ -55,7 +154,7 @@ def test_get_list_of_all_unique_nodes_to_be_labeled():
 def test_get_unique_sources_ind_to_be_added():
     new_sources = np.array([101,202])
     sources_batch = np.arange(5)
-    n_unique_sourecs_to_add = 3
+    n_unique_sources_to_add = 3
     selected_sources_to_label = np.arange(3).tolist()
 
     assert np.intersect1d(new_sources, sources_batch).shape[0] == 0
@@ -172,10 +271,9 @@ def test_compute_ef():
     ef = compute_ef(edges_in_current_windows, window_size)
 
     assert ef.shape[0] == 2
-    assert ef.sum() == 1
-    assert np.array_equal(ef, np.array([1,2])/3)
-    assert np.all(ef<=1)
-    assert np.all(ef>=0)
+    assert ef.sum() == edges_in_current_windows.shape[0]
+    assert np.array_equal(ef, np.array([1,2]))
+    assert np.all(ef>=1)
 
 def test_compute_nf():
     edges = np.array([[2,101],
@@ -198,18 +296,16 @@ def test_compute_nf():
     nf = compute_nf(src_in_current_windows, window_size)
 
     assert nf.shape[0] == 2
-    assert nf.sum() == 1
-    assert np.array_equal(nf, np.array([1,2])/3)
-    assert np.all(nf<=1)
-    assert np.all(nf>=0)
+    assert nf.sum() == src_in_current_windows.shape[0]
+    assert np.array_equal(nf, np.array([1,2]))
+    assert np.all(nf>=1)
 
     nf = compute_nf(dst_in_current_windows, window_size)
 
     assert nf.shape[0] == 2
-    assert nf.sum() == 1
-    assert np.array_equal(nf, np.array([2,1])/3)
-    assert np.all(nf<=1)
-    assert np.all(nf>=0)
+    assert nf.sum() == dst_in_current_windows.shape[0]
+    assert np.array_equal(nf, np.array([2,1]))
+    assert np.all(nf>=1)
 
 
 def test_compute_n_window_containing_edges():
@@ -387,18 +483,39 @@ def test_compute_xf_iwf():
 
     ### test 1
     nf_iwf = compute_xf_iwf(src_in_past_windows, src_in_current_window, window_size)
-    # assert nf_iwf ==  1 + (np.array([2/2])) * sigmoid(np.array(list(map(math.log,3/np.array([3])))))
-    assert nf_iwf ==  1 + (np.array([2/2])) * np.array(list(map(math.log,3/np.array([3]))))
+    assert nf_iwf ==  1 + (np.array([2])) * compute_iwf_from_wf(3, np.array([3]))
     assert np.all(nf_iwf >= 1)
-    assert np.all(nf_iwf <= 2)
+    # assert np.all(nf_iwf <= 2)
 
     ef_iwf = compute_xf_iwf(edges_in_past_windows, edges_in_current_window, window_size, compute_as_nodes=False)
-    # assert ef_iwf ==  1 + (np.array([2])/2) * sigmoid(np.array(list(map(math.log,3/np.array([2])))))
-    assert ef_iwf ==  1 + (np.array([2])/2) * np.array(list(map(math.log,3/np.array([2]))))
+    # assert ef_iwf ==  1 + (np.array([2])/2) * np.array(list(map(math.log,3/np.array([2]))))
+    assert ef_iwf ==  1 + np.array([2]) * compute_iwf_from_wf(3, np.array([2]))
     assert np.all(ef_iwf >= 1)
-    assert np.all(nf_iwf <= 2)
+    # assert np.all(nf_iwf <= 2)
 
-    ### test 2
+def test_get_uniq_x_freq_in_window():
+    edges = np.array([[2,101],
+                      [1,101],
+                      [2,202],
+                      [1,303],
+                      [2,202],
+                      [2,202],
+                      ])
+
+    window_size = 2
+    current_instances_idx = window_size
+    assert window_size < edges.shape[0]
+
+    src_in_past_windows = edges[:-window_size,0]
+    dst_in_past_windows = edges[:-window_size,1]
+
+    src_in_current_window = edges[-window_size:,0]
+    dst_in_current_window = edges[-window_size:,1]
+
+    edges_in_past_windows = edges[:-window_size]
+    edges_in_current_window = edges[-window_size:]
+
+
     current_uniq_nodes, _, _ = get_uniq_x_freq_in_window(src_in_current_window, compute_as_nodes=True)
     nf_iwf, nf_iwf_window_dict = compute_xf_iwf(src_in_past_windows, src_in_current_window, window_size, return_x_value_dict=True)
     assert np.array_equal(np.array(list(nf_iwf_window_dict.keys())), current_uniq_nodes)
@@ -409,4 +526,4 @@ def test_compute_xf_iwf():
 
 
 if __name__ == '__main__':
-    pass
+   pass

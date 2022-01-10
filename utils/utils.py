@@ -6,6 +6,29 @@ import math
 from  sklearn import preprocessing
 import pandas as pd
 
+def compute_share_selected_random_weight_per_window(batch_size):
+  selected_rand_weight = random.choices(list(range(500)), k=1)
+  rand_weight = torch.FloatTensor([selected_rand_weight for i in range(batch_size)]).reshape(-1)
+  return rand_weight
+
+def add_only_new_values_of_new_window_to_dict(func, *args,**kwargs):
+  # def add_values(*something):
+    # print(*something)
+  def add_values(batch_idx,a_dict,param_idx):
+    idx_of_parameter_to_return_from_func = None if param_idx is None else param_idx
+    if batch_idx not in a_dict:
+      output = func(*args, **kwargs)
+      if isinstance(output, tuple):
+        assert idx_of_parameter_to_return_from_func is not None
+        a_dict[batch_idx] = output[idx_of_parameter_to_return_from_func]
+      else:
+        assert idx_of_parameter_to_return_from_func is None
+        a_dict[batch_idx] = output
+
+    return a_dict
+
+  return add_values
+
 def get_encoder(n_uniq_labels):
   enc = preprocessing.OneHotEncoder()
   enc.fit(pd.DataFrame(range(n_uniq_labels)))
@@ -23,10 +46,13 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
   nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
   src_nodes_weight = []
 
-  if batch_idx not in nf_iwf_window_dict:
-    nf_iwf, nodes_to_nf_iwf_current_window_dict = compute_xf_iwf(nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)
-    nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
-    # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
+  nf_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)(
+    batch_idx, nf_iwf_window_dict, 1)
+
+  # if batch_idx not in nf_iwf_window_dict:
+  #   nf_iwf, nodes_to_nf_iwf_current_window_dict = compute_xf_iwf(nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)
+  #   nf_iwf_window_dict[batch_idx] = nodes_to_nf_iwf_current_window_dict
+  #   # nf_iwf_current_window_dict = nf_iwf_window_dict[batch_idx]
 
   # there are two sampling cases:
   # 1. original. (This case. sampled src may not be inside of nf_iwf_window_dict)
@@ -39,19 +65,22 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
     src_nodes_weight.append(nf_iwf_window_dict[batch_idx][ii])
 
   # assert len(src_nodes_weight) == nodes_in_current_window.shape[0]
-  src_nodes_weight = torch.FloatTensor(src_nodes_weight)
 
+  src_nodes_weight = torch.FloatTensor(src_nodes_weight)
   return src_nodes_weight
 
 def get_conditions_node_classification(args):
   if args.use_nf_iwf_weight:
     weighted_loss_method = 'nf_iwf_as_nodes_weight'
+  elif args.use_random_weight_to_benchmark_nf_iwf:
+    weighted_loss_method = 'random_as_node_weight'
   else:
     weighted_loss_method = 'no_weight'
 
   return weighted_loss_method
 
 def get_conditions(args):
+
   if args.use_ef_iwf_weight:
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
@@ -70,7 +99,12 @@ def get_conditions(args):
   elif args.use_random_weight_to_benchmark_ef_iwf:
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "random_as_pos_edges_weight"
+    weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_random_weight_to_benchmark_ef_iwf_1:
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
     compute_xf_iwf_with_sigmoid = False
   else:
     neg_sample_method = "random"
@@ -177,6 +211,13 @@ def compute_n_window_containing_nodes(nodes_in_past_windows, nodes_in_current_wi
 def convert_dict_values_to_np(a_dict):
   return np.array([ii for ii in a_dict.values()])
 
+def compute_iwf_from_wf(wf,n_all_window_contain_current_x):
+  """
+  type(wf) is int
+  type(n_all_window_contain_current_x) is numpy array
+  """
+  return np.array(list(map(math.log, wf/n_all_window_contain_current_x)))
+
 def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=True):
   # assert x_in_past_windows.shape[0] % window_size == 0
   # assert x_in_current_windows.shape[0] % window_size == 0
@@ -209,7 +250,9 @@ def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_
 
 
   wf = n_all_windows # number of document that term appears.
-  iwf = np.array(list(map(math.log, wf/n_all_window_contain_current_x)))
+
+  # iwf = np.array(list(map(math.log, wf/n_all_window_contain_current_x)))
+  iwf = compute_iwf_from_wf(wf, n_all_window_contain_current_x)
 
   iwf_mask = np.where(n_all_window_contain_current_x==0)[0]
   iwf[iwf_mask] = 999999 # replace inf value with very large number.
@@ -217,6 +260,7 @@ def compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_
   # :NOTE: apply sigmoid function to set range of iwf to be [0,1]
   # if compute_ef_iwf_with_sigmoid:
   #   iwf = torch.nn.functional.sigmoid(torch.from_numpy(iwf)).cpu().detach().numpy()
+  # print(wf)
 
   return iwf
 

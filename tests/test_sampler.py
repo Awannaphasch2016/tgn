@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from utils.utils import get_different_edges_mask_left
+from utils.utils import get_different_edges_mask_left, compute_iwf_from_wf
 from utils.sampler import RandEdgeSampler, RandEdgeSampler_v1, RandEdgeSampler_v2, RandEdgeSampler_v3, EdgeSampler_NF_IWF
 
 import numpy as np
@@ -37,22 +37,23 @@ def test_EdgeSampler_rank_unique_node_in_window_based_on_nf_iwf(mocker, data, se
     end_idx = 15
 
     train_rand_sampler = EdgeSampler_NF_IWF(sources, destination, edges, None, start_idx, end_idx,seed=seed)
-    ranked_current_node_uniq_nodes, ranked_uniq_node_nf_in_current_window, _ = train_rand_sampler.rank_unique_node_in_window_based_on_nf_iwf(edges[:,0], start_idx, end_idx)
+    ranked_current_node_uniq_nodes, ranked_uniq_node_nf_iwf_in_current_window, _ = train_rand_sampler.rank_unique_node_in_window_based_on_nf_iwf(edges[:,0], start_idx, end_idx)
 
     assert np.array_equal(ranked_current_node_uniq_nodes, np.array([5]))
-    assert np.array_equal(ranked_uniq_node_nf_in_current_window, np.array([5/15]))
-    assert np.array_equal(ranked_current_node_uniq_nodes, np.array([5]))
+    assert np.array_equal(ranked_uniq_node_nf_iwf_in_current_window, 1 + (5 * compute_iwf_from_wf(3,np.array([1]))))
 
     #### test 2
     start_idx = 0
     end_idx = 5
 
     train_rand_sampler = EdgeSampler_NF_IWF(sources, destination, edges, None, start_idx, end_idx,seed=seed)
-    ranked_current_node_uniq_nodes, ranked_uniq_node_nf_in_current_window, _ = train_rand_sampler.rank_unique_node_in_window_based_on_nf_iwf(edges[:,0], start_idx, end_idx)
+    ranked_current_node_uniq_nodes, ranked_uniq_node_nf_iwf_in_current_window, _ = train_rand_sampler.rank_unique_node_in_window_based_on_nf_iwf(edges[:,0], start_idx, end_idx)
 
+    # print(ranked_uniq_node_nf_iwf_in_current_window)
+    # print(ranked_current_node_uniq_nodes)
     assert np.array_equal(ranked_current_node_uniq_nodes, np.array([3,2,1]))
-    assert np.array_equal(ranked_uniq_node_nf_in_current_window, np.array([3,2,1])/15)
-    assert np.array_equal(ranked_current_node_uniq_nodes, np.array([3,2,1]))
+    # assert np.array_equal(ranked_uniq_node_nf_iwf_in_current_window, np.array([3,2,1])/15)
+    assert np.array_equal(ranked_uniq_node_nf_iwf_in_current_window, 1 + (np.array([1,2,2])* compute_iwf_from_wf(1, np.array([1,1,1]))))
 
 @pytest.mark.usefixtures("data", "seed", "fixed_edges")
 def test_EdgeSampler_sample_nf_iwf(mocker, data, seed, fixed_edges):

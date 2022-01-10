@@ -14,7 +14,7 @@ def test_select_decoder_and_loss_when_uniq_labels_are_two(mocker):
 
     assert isinstance(decoder_optimizer, torch.optim.Adam)
     assert isinstance(decoder, MLP)
-    assert isinstance(decoder_loss_criterion, torch.nn.BCELoss)
+    assert isinstance(decoder_loss_criterion(), torch.nn.BCELoss)
 
 
 def test_select_decoder_and_loss_when_uniq_labels_are_four(mocker):
@@ -25,7 +25,7 @@ def test_select_decoder_and_loss_when_uniq_labels_are_four(mocker):
 
     assert isinstance(decoder_optimizer, torch.optim.Adam)
     assert isinstance(decoder, MLP_multiple_class)
-    assert isinstance(decoder_loss_criterion, torch.nn.CrossEntropyLoss)
+    assert isinstance(decoder_loss_criterion(), torch.nn.CrossEntropyLoss)
 
 def test_time_based_similarity(mocker):
     pass

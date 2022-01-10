@@ -72,7 +72,9 @@ parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
 parser.add_argument('--use_sigmoid_ef_iwf_weight', action='store_true',
                     help='same as --use_ef_iwf_weight, but sigmoid is applied to compute ef_iwf ')
 parser.add_argument('--use_random_weight_to_benchmark_ef_iwf', action='store_true',
-                    help='orignal tgn but use random positive weight.')
+                    help='orignal tgn but use random positive weight such tha new random weight from given range are generated for a new window')
+parser.add_argument('--use_random_weight_to_benchmark_ef_iwf_1', action='store_true',
+                    help='orignal tgn but use random positive weight such that all instances in each window shares same weight, but each window will be assigned weight randomly.')
 parser.add_argument('--run_tuning', action='store_true',
                     help='run hyperparameter tuning.')
 
@@ -370,6 +372,7 @@ if __name__ == "__main__":
     # print("Best trial test set accuracy: {}".format(test_acc))
 
   if args.run_tuning:
+    raise NotImplementedError()
     run_tuning()
   else:
     run_model(args,

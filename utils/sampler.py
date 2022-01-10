@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from utils.utils import get_edges_dtype, get_different_edges_mask_left, compute_nf, get_uniq_nodes_freq_in_window
+from utils.utils import get_edges_dtype, get_different_edges_mask_left, compute_nf, get_uniq_nodes_freq_in_window, compute_xf_iwf
 import numpy as np
 import torch
 from random import choices
@@ -97,21 +97,21 @@ class EdgeSampler_NF_IWF(Sampler):
     uniq_node_nf_iwf = compute_xf_iwf(node_in_past_windows, node_in_current_window ,window_size=window_size)
 
     # all_uniq_node_to_nf_dict = {i:j for i,j in zip(all_node_uniq_nodes,uniq_node_nf)}
-    current_uniq_node_to_nf_dict = {i:j for i,j in zip(current_node_uniq_nodes,uniq_node_nf_iwf)}
+    current_uniq_node_to_nf_iwf_dict = {i:j for i,j in zip(current_node_uniq_nodes,uniq_node_nf_iwf)}
 
-    uniq_node_nf_in_current_window = np.array([current_uniq_node_to_nf_dict[i] for i in current_node_uniq_nodes])
+    uniq_node_nf_iwf_in_current_window = np.array([current_uniq_node_to_nf_iwf_dict[i] for i in current_node_uniq_nodes])
 
-    sort_idx = np.argsort(uniq_node_nf_in_current_window)[::-1]
+    sort_idx = np.argsort(uniq_node_nf_iwf_in_current_window)[::-1]
 
     # ranked_uniq_node_nf_in_current_window = np.sort(uniq_node_nf_in_current_window)[::-1]
-    ranked_uniq_node_nf_in_current_window = uniq_node_nf_in_current_window[sort_idx]
+    ranked_uniq_node_nf_iwf_in_current_window = uniq_node_nf_iwf_in_current_window[sort_idx]
     ranked_current_node_uniq_nodes = current_node_uniq_nodes[sort_idx]
     ranked_current_node_uniq_nodes_freq = current_node_uniq_nodes_freq[sort_idx]
-    assert ranked_uniq_node_nf_in_current_window.max() == ranked_uniq_node_nf_in_current_window[0]
+    assert ranked_uniq_node_nf_iwf_in_current_window.max() == ranked_uniq_node_nf_iwf_in_current_window[0]
 
     # ranked_node = np.array([current_uniq_node_to_idx_dict[i] for i in node_in_current_window])
     # return ranked_node, current_uniq_node_to_idx_dict
-    return ranked_current_node_uniq_nodes,ranked_uniq_node_nf_in_current_window, ranked_current_node_uniq_nodes_freq
+    return ranked_current_node_uniq_nodes,ranked_uniq_node_nf_iwf_in_current_window, ranked_current_node_uniq_nodes_freq
 
   # def sample_nf_iwf(self, batch_size, size, top_k_percent=0.2, only_nodes_in_current_window=False):
   def sample_nf_iwf(self, batch_size, size, top_k_percent=0.2):
