@@ -7,7 +7,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder, get_share_selected_random_weight_per_window
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder, get_share_selected_random_weight_per_window, get_sliding_window_params
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
@@ -477,7 +477,16 @@ def sliding_window_evaluation_node_prediction(
     # decoder_loss_criterion,
     NUM_EPOCH
     ):
-  #
+  num_instance = len(full_data.sources)
+  end_train_idx = None
+  selected_sources_to_label = []
+  nf_iwf_window_dict = {}
+  share_selected_random_weight_per_window_dict = {}
+  epoch_times = []
+  total_epoch_times = []
+
+  onehot_encoder = get_encoder(full_data.n_unique_labels)
+
   weighted_loss_method = get_conditions_node_classification(args)
 
   # get decoder and loss
@@ -485,34 +494,12 @@ def sliding_window_evaluation_node_prediction(
   n_unique_labels = full_data.n_unique_labels
   decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss_method)
 
-  num_instance = len(full_data.sources)
+  num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws = get_sliding_window_params(num_instance, full_data, BATCH_SIZE)
 
-  epoch_times = []
-  total_epoch_times = []
-
-  # init_train_data = BATCH_SIZE
-  init_train_data = max(BATCH_SIZE, math.ceil(num_instance * 0.001)) # :DEBUG:
-
-  end_train_idx = None
-
-
-  num_instances_shift = BATCH_SIZE * 1 # 100
-
-  total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
-  init_num_ws = math.ceil((init_train_data)/num_instances_shift) #6
-  left_num_ws = total_num_ws - init_num_ws
-
-  fixed_begin_ws_idx = 0 # always stay 0
   begin_ws_idx = 0 # pointer for first index of previously added window
   end_ws_idx = init_train_data # pointer for last index of previously added window
 
-  selected_sources_to_label = []
-  nf_iwf_window_dict = {}
-  share_selected_random_weight_per_window_dict = {}
-
-  onehot_encoder = get_encoder(full_data.n_unique_labels)
-
-  for ws in range(left_num_ws):
+ for ws in range(left_num_ws):
 
     num_batch = math.ceil((end_ws_idx)/BATCH_SIZE)
 
@@ -641,7 +628,9 @@ def sliding_window_evaluation_node_prediction(
 
       VAL_BATCH_SIZE = BATCH_SIZE * 1
 
+      # :NOTE: For reddit_with_expert_labels_10000 dataset, full_data.n_interactions is 9999 not 10k. That's why it failed. (data was not the length it was expected.)
       assert full_data.timestamps.shape[0] >= end_train_idx + BATCH_SIZE
+
       # :DEBUG:
       time_after_end_of_current_batch = full_data.timestamps > full_data.timestamps[end_train_idx]
       time_before_end_of_next_batch = full_data.timestamps <= full_data.timestamps[end_train_idx + BATCH_SIZE]

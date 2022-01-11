@@ -10,7 +10,7 @@ from pathlib import Path
 
 from evaluation.evaluation import eval_edge_prediction, sliding_window_evaluation, train_val_test_evaluation
 from model.tgn import TGN
-from utils.utils import EarlyStopMonitor, setup_logger
+from utils.utils import EarlyStopMonitor, setup_logger, CheckPoint
 from utils.data_processing import get_data, compute_time_statistics, Data
 
 torch.manual_seed(0)
@@ -22,7 +22,7 @@ parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia 
                     default='wikipedia')
 parser.add_argument('--bs', type=int, default=200, help='Batch_size')
 # parser.add_argument('--bs', type=int, default=1000, help='Batch_size')
-parser.add_argument('--prefix', type=str, default='', help='Prefix to name the checkpoints')
+parser.add_argument('--prefix', type=str, default=None, help='Prefix to name the checkpoints')
 parser.add_argument('--n_degree', type=int, default=10, help='Number of neighbors to sample')
 parser.add_argument('--n_head', type=int, default=2, help='Number of heads used in attention layer')
 parser.add_argument('--n_epoch', type=int, default=50, help='Number of epochs')
@@ -50,7 +50,8 @@ parser.add_argument('--memory_update_at_end', action='store_true',
                     help='Whether to update memory at the end or at the start of the batch')
 parser.add_argument('--message_dim', type=int, default=100, help='Dimensions of the messages')
 parser.add_argument('--memory_dim', type=int, default=172, help='Dimensions of the memory for '
-                                                                'each user')
+
+                                                'each user')
 parser.add_argument('--different_new_nodes', action='store_true',
                     help='Whether to use disjoint set of new nodes for train and val')
 parser.add_argument('--uniform', action='store_true',
@@ -65,6 +66,8 @@ parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
 
 # anak's argument
+parser.add_argument('--save_checkpoint', action='store_true',
+                    help='save checkpoint of this run.')
 parser.add_argument('--use_ef_iwf_weight', action='store_true',
                     help='use ef_iwf as weight of positive edges in BCE loss')
 parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
@@ -116,8 +119,8 @@ MEMORY_DIM = args.memory_dim
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
 MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
-get_checkpoint_path = lambda \
-    epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
+# get_checkpoint_path = lambda \
+#     epoch: f'./saved_checkpoints/{args.prefix}-{args.data}-{epoch}.pth'
 
 Path("log/").mkdir(parents=True, exist_ok=True)
 
@@ -193,7 +196,12 @@ def run_model(args,
   MESSAGE_DIM = args.message_dim
   MEMORY_DIM = args.memory_dim
 
+  check_point = CheckPoint()
+  check_point.is_node_classification = False
+  check_point.log_timestamp = log_time
+
   for i in range(args.n_runs):
+    check_point.run_idx = i
     results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
     Path("results/").mkdir(parents=True, exist_ok=True)
 
@@ -251,6 +259,7 @@ def run_model(args,
                               full_data,
                               device,
                               NUM_NEIGHBORS,
+                              check_point
                               )
 
     # train_val_test_evaluation(tgn,
@@ -371,5 +380,5 @@ if __name__ == "__main__":
               std_time_shift_dst,
               # config params
               device,
-              MODEL_SAVE_PATH,
+              MODEL_SAVE_PATH
               )

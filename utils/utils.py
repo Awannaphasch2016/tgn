@@ -6,6 +6,83 @@ import math
 from  sklearn import preprocessing
 import pandas as pd
 import logging
+from pathlib import Path
+
+def get_an_arg_name(my_args, arg_name, return_if_args_value_is_true=True):
+    """
+    type(arg_name) is str
+    """
+    raise NotImplementedError("haven't check its correctness yet, because I haven't get a change to use it.")
+    return_arg_name = None
+    if arg_name in dir(my_args):
+        return_arg_name = arg_name
+
+    if return_if_args_value_is_true:
+        assert getattr(my_args, arg_name) is True
+
+    assert return_arg_name is not None
+
+    return return_arg_name
+
+
+class CheckPoint():
+    def __init__(self):
+        self.data = None
+        self.bs = None
+        self.prefix = None
+        self.ws_idx = None
+        self.ws_max = None
+        self.run_idx = None
+        self.log_timestamp = None
+        self.is_node_classification = None
+
+    def get_checkpoint_path(self):
+        assert self.data is not None
+        assert self.bs is not None
+        assert self.prefix is not None
+        assert self.ws_idx is not None
+        assert self.ws_max is not None
+        assert self.run_idx is not None
+        assert self.log_timestamp is not None
+        assert self.is_node_classification is not None
+
+        checkpoint_path = None
+        general_checkpoint_path = None
+
+        general_checkpoint_path = Path(f'prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx{self.run_idx}-{self.log_timestamp}.pth')
+
+        if self.is_node_classification:
+            raise NotImplementedError()
+            checkpoint_dir = 'node-classification'
+        else:
+            checkpoint_dir = 'link-prediction'
+
+        Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+        checkpoint_path = str(Path(checkpoint_dir) / general_checkpoint_path)
+
+        assert self.data in checkpoint_path
+        assert str(self.bs) in checkpoint_path
+        assert self.prefix in checkpoint_path
+        assert str(self.ws_idx) in checkpoint_path
+        assert str(self.ws_max) in checkpoint_path
+        assert str(self.log_timestamp) in checkpoint_path
+        assert str(self.run_idx) in checkpoint_path
+
+        return checkpoint_path
+
+def get_sliding_window_params(num_instance, full_data, batch_size):
+
+  num_instances_shift = batch_size * 1 # 100
+
+  # init_train_data = BATCH_SIZE
+  init_train_data = math.ceil(num_instance * 0.001)
+  init_train_data = batch_size * max(1,math.floor(init_train_data/num_instances_shift))
+
+  total_num_ws =  math.floor(num_instance/num_instances_shift) # 6
+  init_num_ws = math.floor(init_train_data/num_instances_shift) #6
+  left_num_ws = total_num_ws - init_num_ws
+
+  return num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws
 
 def setup_logger(formatter, name, log_file, level=logging.INFO):
     """
@@ -116,33 +193,38 @@ def get_conditions_node_classification(args):
   return weighted_loss_method
 
 def get_conditions(args):
-
   if args.use_ef_iwf_weight:
+    prefix = 'use_ef_iwf_weight'
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = False
   elif args.use_sigmoid_ef_iwf_weight:
+    prefix = "use_sigmoid_ef_iwf_weight"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = True
   elif args.use_nf_iwf_neg_sampling:
+    prefix = "use_nf_iwf_neg_sampling"
     neg_sample_method = "nf_iwf"
     neg_edges_formation = "sampled_src_and_sampled_dst"
     weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
     compute_xf_iwf_with_sigmoid = False
   elif args.use_random_weight_to_benchmark_ef_iwf:
+    prefix = "use_random_weight_to_benchmark_ef_iwf"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
     compute_xf_iwf_with_sigmoid = False
   elif args.use_random_weight_to_benchmark_ef_iwf_1:
+    prefix = "use_share_selected_random_weight_per_window_to_benchmark_ef_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
     compute_xf_iwf_with_sigmoid = False
   else:
+    prefix = "original"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "no_weight"
@@ -154,7 +236,7 @@ def get_conditions(args):
   # conditions['weighted_loss_method'] = weighted_loss_method
   # conditions['compute_xf_iwf_with_sigmoid'] = compute_xf_iwf_with_sigmoid
 
-  return neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
+  return prefix, neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
 
 def sigmoid(x):
   return torch.nn.functional.sigmoid(torch.from_numpy(x)).cpu().detach().numpy()

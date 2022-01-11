@@ -5,7 +5,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf, get_conditions, get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf, get_conditions, get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, get_sliding_window_params
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -412,6 +412,9 @@ def compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_forma
 
   return pos_prob, neg_prob
 
+def set_checkpoint_prefix():
+  pass
+
 def sliding_window_evaluation(tgn,
                             num_instance,
                             BATCH_SIZE,
@@ -419,51 +422,47 @@ def sliding_window_evaluation(tgn,
                             logger,
                             logger_2,
                             USE_MEMORY,
-                            MODEL_SAVE_PATH,
+                            # MODEL_SAVE_PATH,
                             args,
                             optimizer,
                             # criterion,
                             full_data,
                             device,
-                            NUM_NEIGHBORS):
+                              NUM_NEIGHBORS,
+                              check_point):
 
   # :TODO: write test on these. raise exception for all cases that wasn't intended or designed for.
-  neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid = get_conditions(args)
+  prefix, neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid = get_conditions(args)
 
-  epoch_times = []
-  total_epoch_times = []
-
-  # ADD: variables for sliding_window_evaluation
-  # init_train_data = math.ceil(num_instance * 0.4)
-  # init_train_data = math.ceil(num_instance * 0.05)
-  # init_train_data = math.ceil(num_instance * 0.01)
-  init_train_data = BATCH_SIZE
-
-  end_train_idx = None
+  num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws = get_sliding_window_params(num_instance, full_data, BATCH_SIZE)
 
 
-  num_instances_shift = BATCH_SIZE * 1
-
-  total_num_ws =  math.ceil(num_instance/num_instances_shift)
-  init_num_ws = math.ceil((init_train_data)/num_instances_shift)
-  left_num_ws = total_num_ws - init_num_ws
+  check_point.data = args.data
+  check_point.prefix = prefix
+  check_point.bs = args.bs
+  check_point.ws_max = total_num_ws
 
   ef_iwf_window_dict = {}
   nf_iwf_window_dict = {}
   share_selected_random_weight_per_window_dict = {}
   pos_edges_weight = None
   neg_edges_weight = None
+  epoch_times = []
+  total_epoch_times = []
+  end_train_idx = None
+
 
   for ws in range(left_num_ws):
 
+    check_point.ws_idx = ws
     num_batch = math.ceil((init_train_data)/BATCH_SIZE)
     logger.debug('-ws = {}'.format(ws))
     logger_2.info('-ws = {}'.format(ws))
     ws_idx = ws
     m_loss = []
     for epoch in range(NUM_EPOCH):
-    # epoch_ref_window_size =
-    # for epoch in range(5):
+      check_point.epoch_idx = epoch
+      check_point.get_checkpoint_path()
       logger.debug('--epoch = {}'.format(epoch))
       logger_2.info('--epoch = {}'.format(epoch))
       start_epoch = time.time()
@@ -650,6 +649,9 @@ def sliding_window_evaluation(tgn,
       #   break
       # else:
       #   torch.save(tgn.state_dict(), get_checkpoint_path(epoch))
+
+    if args.save_checkpoint:
+      torch.save(tgn.state_dict(), check_point.get_checkpoint_path())
 
     # left_num_batch -= 1
     # init_num_batch += 1
