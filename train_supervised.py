@@ -270,6 +270,8 @@ if __name__ == "__main__":
     # fine_tuning()
     # test_contrastive_learning()
 
+    logger.info('run = {}'.format(i))
+
     sliding_window_evaluation_node_prediction(
       logger,
       logger_2,

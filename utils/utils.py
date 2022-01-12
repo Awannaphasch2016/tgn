@@ -8,6 +8,12 @@ import pandas as pd
 import logging
 from pathlib import Path
 
+def return_min_length_of_list_members(list_of_vars):
+  min_length = float('inf')
+  for i in list_of_vars:
+    min_length = min(min_length, len(i))
+  return min_length
+
 def get_an_arg_name(my_args, arg_name, return_if_args_value_is_true=True):
     """
     type(arg_name) is str
@@ -118,7 +124,7 @@ def get_share_selected_random_weight_per_window(batch_size, batch_idx, share_sel
   return share_selected_random_weight_per_window_dict[batch_idx]
 
 def compute_share_selected_random_weight_per_window(batch_size):
-  selected_rand_weight = random.choices(list(range(500)), k=1)
+  selected_rand_weight = random.choices(list(range(5)), k=1)
   rand_weight = torch.FloatTensor([selected_rand_weight for i in range(batch_size)]).reshape(-1)
   return rand_weight
 

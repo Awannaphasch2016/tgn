@@ -499,7 +499,7 @@ def sliding_window_evaluation_node_prediction(
   begin_ws_idx = 0 # pointer for first index of previously added window
   end_ws_idx = init_train_data # pointer for last index of previously added window
 
- for ws in range(left_num_ws):
+  for ws in range(left_num_ws):
 
     num_batch = math.ceil((end_ws_idx)/BATCH_SIZE)
 
@@ -645,7 +645,19 @@ def sliding_window_evaluation_node_prediction(
 
       # tgn.eval()
       # decoder.eval()
-      val_auc = my_eval_node_classification(logger,
+
+      # val_auc = my_eval_node_classification(logger,
+      #                                       tgn,
+      #                                    decoder,
+      #                                    val_data,
+      #                                    # full_data.edge_idxs[end_train_idx:end_train_idx + VAL_BATCH_SIZE],
+      #                                    # full_data.edge_idxs,
+      #                                    # val_data.edge_idxs,
+      #                                    VAL_BATCH_SIZE,
+      #                                    selected_sources_to_label,
+      #                                   n_neighbors=NUM_NEIGHBORS)
+
+      val_auc, val_acc, cm  = my_eval_node_classification(logger,
                                             tgn,
                                          decoder,
                                          val_data,
@@ -655,6 +667,8 @@ def sliding_window_evaluation_node_prediction(
                                          VAL_BATCH_SIZE,
                                          selected_sources_to_label,
                                         n_neighbors=NUM_NEIGHBORS)
+
+
 
       # sources_batch = full_data.sources[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
       # destinations_batch  = full_data.destinations[end_train_idx:end_train_idx + VAL_BATCH_SIZE]
@@ -683,8 +697,11 @@ def sliding_window_evaluation_node_prediction(
 
       logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
       logger.info('Epoch mean loss: {}'.format(np.mean(m_loss)))
-      logger.info(
-        'val auc: {}'.format(val_auc))
+      logger.info(f'val acc: {val_acc}')
+      logger.info(f'confusion matrix = \n{cm}')
+
+      # logger.info(
+      #   'val auc: {}'.format(val_auc))
 
     # left_num_batch -= 1
     # init_num_batch += 1
