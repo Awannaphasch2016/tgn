@@ -251,3 +251,5 @@ hotkey.txt
 todo.txt
 .idea/*
 /plot/
+*.out
+*.err

@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #SBATCH -N 1
 #SBATCH -A Anak_%j
 #SBATCH -p longq7-mri
