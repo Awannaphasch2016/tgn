@@ -1,4 +1,13 @@
 #!/bin/bash
+
+#SBATCH -N 1
+#SBATCH -A Anak_%j
+#SBATCH -p longq7
+#SBATCH --gres=gpu:v100:4
+#SBATCH -e run_train_self_supervised_%j.err
+#SBATCH -o run_train_self_supervised_%j.out
+#SBATCH --mem-MaxMemPerNode
+
 set -e
 
 nepoch=$1

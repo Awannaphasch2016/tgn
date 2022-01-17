@@ -1,12 +1,13 @@
 #!/bin/bash
 #SBATCH -N 1
 #SBATCH -A Anak_%j
-#SBATCH -p longq7-mri
+#SBATCH -p longq7
 #SBATCH --gres=gpu:v100:4
-#SBATCH -e run_train_self_supervised_%j.err
-#SBATCH -o run_train_self_supervised_%j.out
+#SBATCH -e run_with_slurm_%j.err
+#SBATCH -o run_with_slurm_%j.out
 #SBATCH --mem-MaxMemPerNode
 
+# SBATCH -p longq7-mri
 # SRUN -N 1
 # SRUN -A Anak_%j
 # SRUN -p longq7-mri

@@ -1,4 +1,5 @@
 #!/bin/bash
+
 #SBATCH -N 1
 #SBATCH -A Anak_%j
 #SBATCH -p longq7-mri
@@ -6,19 +7,6 @@
 #SBATCH -e run_train_self_supervised_%j.err
 #SBATCH -o run_train_self_supervised_%j.out
 #SBATCH --mem-MaxMemPerNode
-
-# SRUN -N 1
-# SRUN -A Anak_%j
-# SRUN -p longq7-mri
-# SRUN --gres=gpu:v100:4
-# SRUN -e run_train_self_supervised_%j.err
-# SRUN -o run_train_self_supervised_%j.out
-# SRUN --mem-MaxMemPerNode
-
-
-# # SBATCH -p shortq7
-# # SBATCH --mail-user=awannaphasch2016@fau.edu
-# # SBATCH --mail-type=ALL
 
 set -e
 
