@@ -31,4 +31,4 @@ module load openblas-0.3.7-gcc-8.3.0-oqk2bly
 module load fftw-3.3.8-gcc-8.3.0-wngh6wh
 module load cudnn-7.6.5.32-10.1-linux-x64-gcc-8.3.0-vldxhwt
 
-./run_experiments.sh
+sbatch run_experiments.sh
