@@ -449,7 +449,11 @@ if __name__ == "__main__":
     run_tuning()
   else:
 
+<<<<<<< HEAD
     raise NotImplementedError("I am not sure if the implementation of ray tune can be generalized to running model individually.")
+=======
+    # raise NotImplementedError("I am not sure if the implementation of ray tune can be generalized to running model individually.")
+>>>>>>> save the work to be run on HPC
     param_config                  = get_param_config(NUM_EPOCH, BATCH_SIZE)
     run_model(param_config,
               args                =args,
