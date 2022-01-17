@@ -38,9 +38,11 @@ class CheckPoint():
         self.prefix = None
         self.ws_idx = None
         self.ws_max = None
+        self.epoch_max = None
         self.run_idx = None
         self.log_timestamp = None
         self.is_node_classification = None
+        self.max_random_weight_range = None
 
     def get_checkpoint_path(self):
         assert self.data is not None
@@ -51,11 +53,18 @@ class CheckPoint():
         assert self.run_idx is not None
         assert self.log_timestamp is not None
         assert self.is_node_classification is not None
+        assert self.epoch_max is not None
+
+        if self.max_random_weight_range is None:
+          max_random_weight_range = "None"
+        else:
+          max_random_weight_range = int(self.max_random_weight_range)
+
 
         checkpoint_path = None
         general_checkpoint_path = None
 
-        general_checkpoint_path = Path(f'prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx{self.run_idx}-{self.log_timestamp}.pth')
+        general_checkpoint_path = Path(f'prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx{self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
 
         if self.is_node_classification:
             raise NotImplementedError()
@@ -73,6 +82,7 @@ class CheckPoint():
         assert str(self.ws_max) in checkpoint_path
         assert str(self.log_timestamp) in checkpoint_path
         assert str(self.run_idx) in checkpoint_path
+        assert str(self.epoch_max) in checkpoint_path
 
         return checkpoint_path
 
@@ -114,17 +124,17 @@ def setup_logger(formatter, name, log_file, level=logging.INFO):
     return logger
 
 
-def get_share_selected_random_weight_per_window(batch_size, batch_idx, share_selected_random_weight_per_window_dict):
+def get_share_selected_random_weight_per_window(batch_size, max_weight, batch_idx, share_selected_random_weight_per_window_dict):
 
-  share_selected_random_weight_per_window_dict = add_only_new_values_of_new_window_to_dict(compute_share_selected_random_weight_per_window, batch_size)(
+  share_selected_random_weight_per_window_dict = add_only_new_values_of_new_window_to_dict(compute_share_selected_random_weight_per_window, batch_size, max_weight)(
       batch_idx,
       share_selected_random_weight_per_window_dict,
       None
     )
   return share_selected_random_weight_per_window_dict[batch_idx]
 
-def compute_share_selected_random_weight_per_window(batch_size):
-  selected_rand_weight = random.choices(list(range(5)), k=1)
+def compute_share_selected_random_weight_per_window(batch_size, max_weight):
+  selected_rand_weight = random.choices(list(range(max_weight)), k=1)
   rand_weight = torch.FloatTensor([selected_rand_weight for i in range(batch_size)]).reshape(-1)
   return rand_weight
 
@@ -200,36 +210,42 @@ def get_conditions_node_classification(args):
 
 def get_conditions(args):
   if args.use_ef_iwf_weight:
+    assert args.max_random_weight_range is None
     prefix = 'use_ef_iwf_weight'
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = False
   elif args.use_sigmoid_ef_iwf_weight:
+    raise NotImplementedError("I don't expect this to be used anymore.")
     prefix = "use_sigmoid_ef_iwf_weight"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = True
   elif args.use_nf_iwf_neg_sampling:
+    assert args.max_random_weight_range is None
     prefix = "use_nf_iwf_neg_sampling"
     neg_sample_method = "nf_iwf"
     neg_edges_formation = "sampled_src_and_sampled_dst"
     weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
     compute_xf_iwf_with_sigmoid = False
   elif args.use_random_weight_to_benchmark_ef_iwf:
+    assert args.max_random_weight_range is not None
     prefix = "use_random_weight_to_benchmark_ef_iwf"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
     compute_xf_iwf_with_sigmoid = False
   elif args.use_random_weight_to_benchmark_ef_iwf_1:
+    assert args.max_random_weight_range is not None
     prefix = "use_share_selected_random_weight_per_window_to_benchmark_ef_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
     compute_xf_iwf_with_sigmoid = False
   else:
+    assert args.max_random_weight_range is None
     prefix = "original"
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"

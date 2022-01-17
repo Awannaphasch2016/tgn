@@ -94,6 +94,8 @@ parser.add_argument('--n_tuning_samples', type=int, default=3,
                     help='number of time to draw sample from hyperparameter spaces. ')
 parser.add_argument('--n_gpu', type=int, default=1,
                     help='number of gpu to use')
+parser.add_argument('--max_random_weight_range', type=int, default=None,
+                    help='maximum range of random weight method')
 
 
 def prep_args():

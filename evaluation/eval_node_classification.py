@@ -428,7 +428,7 @@ def select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss
 
   return decoder_optimizer, decoder, decoder_loss_criterion
 
-def get_nodes_weight(full_data, batch_idx, batch_size, start_train_idx, end_train_idx, nf_iwf_window_dict, n_unique_labels, weighted_loss_method, share_selected_random_weight_per_window_dict):
+def get_nodes_weight(full_data, batch_idx, batch_size, max_weight,start_train_idx, end_train_idx, nf_iwf_window_dict, n_unique_labels, weighted_loss_method, share_selected_random_weight_per_window_dict):
 
   nodes_weight = None
 
@@ -443,7 +443,7 @@ def get_nodes_weight(full_data, batch_idx, batch_size, start_train_idx, end_trai
       nodes_weight = [random.randint(0,500) for i in range(batch_size)]
       nodes_weight = torch.FloatTensor(nodes_weight)
     elif weighted_loss_method == "share_selected_random_weight_per_window":
-      nodes_weight = get_share_selected_random_weight_per_window(batch_size, batch_idx, share_selected_random_weight_per_window_dict)
+      nodes_weight = get_share_selected_random_weight_per_window(batch_size, max_weight,batch_idx, share_selected_random_weight_per_window_dict)
     elif weighted_loss_method == "no_weight":
       pass
     else:
@@ -562,6 +562,7 @@ def sliding_window_evaluation_node_prediction(
           labels_batch = labels_batch[selected_sources_ind]
           sources_batch = sources_batch[selected_sources_ind]
 
+          raise NotImplementedError("added arugment to get_nodes_weight and I haven't test it in node_classification yet.")
           nodes_weight = get_nodes_weight(full_data, batch_idx, BATCH_SIZE, start_train_idx, end_train_idx, nf_iwf_window_dict, n_unique_labels, weighted_loss_method, share_selected_random_weight_per_window_dict)
 
           logger_2.info(f'nodes_weight = {nodes_weight}')
