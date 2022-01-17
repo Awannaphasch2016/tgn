@@ -13,6 +13,16 @@ from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, setup_logger, CheckPoint
 from utils.data_processing import get_data, compute_time_statistics, Data
 
+
+from functools import partial
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import random_split
+from ray import tune
+from ray.tune import CLIReporter
+from ray.tune.schedulers import ASHAScheduler
+
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -80,6 +90,10 @@ parser.add_argument('--use_random_weight_to_benchmark_ef_iwf_1', action='store_t
                     help='orignal tgn but use random positive weight such that all instances in each window shares same weight, but each window will be assigned weight randomly.')
 parser.add_argument('--run_tuning', action='store_true',
                     help='run hyperparameter tuning.')
+parser.add_argument('--n_tuning_samples', type=int, default=3,
+                    help='number of time to draw sample from hyperparameter spaces. ')
+parser.add_argument('--n_gpu', type=int, default=1,
+                    help='number of gpu to use')
 
 
 def prep_args():
@@ -164,26 +178,51 @@ logger_2.info(args)
 device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-def run_model(args,
-            # logger
-            logger,
-            logger_2,
-            # data
-            full_data,
-            # code params
-            node_features,
-            edge_features,
-            mean_time_shift_src,
-            std_time_shift_src,
-            mean_time_shift_dst,
-            std_time_shift_dst,
-            device,
-            MODEL_SAVE_PATH,):
+def get_param_config(n_epoch, batch_size):
+  config = {}
+  config["n_epoch"] = n_epoch
+  config["batch_size"] = batch_size
+  return config
 
-  BATCH_SIZE = args.bs
+def get_param_config_for_tuning(args):
+  config = {
+      "n_epoch": tune.choice([5, 10, 50]),
+      # "batch_size": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
+      # "lr": tune.loguniform(1e-4, 1e-1),
+      "batch_size": tune.choice([100, 200, 1000, 5000]),
+      # parameter from
+  }
+  return config
+
+
+def run_model(
+            config,
+            args = None,
+            # logger
+            logger = None,
+            logger_2 = None,
+            # data
+            full_data = None,
+            # code params
+            node_features = None,
+            edge_features = None,
+            mean_time_shift_src = None,
+            std_time_shift_src = None,
+            mean_time_shift_dst = None,
+            std_time_shift_dst = None,
+            device = None,
+            MODEL_SAVE_PATH = None,
+            checkpoint_dir=None,
+            ):
+
+
+  # param that will be tuned
+  BATCH_SIZE = config['batch_size']
+  NUM_EPOCH = config['n_epoch']
+
+  # param that will not be tuned
   NUM_NEIGHBORS = args.n_degree
   NUM_NEG = 1
-  NUM_EPOCH = args.n_epoch
   NUM_HEADS = args.n_head
   DROP_OUT = args.drop_out
   GPU = args.gpu
@@ -284,6 +323,98 @@ def run_model(args,
     #                           get_checkpoint_path,
     #                           results_path
     #                           )
+
+def print_hi(config, tmp, checkpoint_dir=None):
+    print(config)
+
+
+def run_tuning():
+
+  data_dir = Path.cwd()/'data/{}.npy'.format(args.data)
+  num_samples = args.n_tuning_samples
+
+  config = get_param_config_for_tuning(args)
+
+  # config = {
+  #     "n_epoch": tune.choice([5, 10, 50]),
+  #     "batch_size": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
+  #     # "lr": tune.loguniform(1e-4, 1e-1),
+  #     "batch_size": tune.choice([2, 4, 8, 16]),
+  #     # parameter from
+  # }
+
+  scheduler = ASHAScheduler(
+      metric="loss",
+      mode="min",
+      max_t=args.n_epoch,
+      grace_period=1,
+      reduction_factor=2)
+  reporter = CLIReporter(
+      # parameter_columns=["l1", "l2", "lr", "batch_size"],
+      metric_columns=["loss", "accuracy", "training_iteration"])
+
+  # result = tune.run(
+  #     partial(print_hi, 5),
+  #     # resources_per_trial={"cpu": 2, "gpu": args.n_gpu},
+  #     name="print_hi",
+  #     resources_per_trial={"cpu": 2},
+  #     config=config,
+  #     num_samples=num_samples,
+  #     scheduler=scheduler,
+  #     progress_reporter=reporter)
+
+  result = tune.run(
+      partial(run_model,
+              args                =args,
+              # logger
+              logger              =logger,
+              logger_2            =logger_2,
+              # data
+              full_data           =full_data,
+              # code params
+              node_features       =node_features,
+              edge_features       =edge_features,
+              mean_time_shift_src =mean_time_shift_src,
+              std_time_shift_src  =std_time_shift_src,
+              mean_time_shift_dst =mean_time_shift_dst,
+              std_time_shift_dst  =std_time_shift_dst,
+              # config params
+              device              =device,
+              MODEL_SAVE_PATH     =MODEL_SAVE_PATH),
+
+      name="train_self_supervised",
+      # resources_per_trial={"cpu": 2, "gpu": args.n_gpu},
+      resources_per_trial={"cpu": 1},
+      # resources_per_trial={"cpu": 6},
+      config=config,
+      num_samples=num_samples,
+      scheduler=scheduler,
+      progress_reporter=reporter)
+
+  # best_trial = result.get_best_trial("loss", "min", "last")
+
+  # print("Best trial config: {}".format(best_trial.config))
+  # print("Best trial final validation loss: {}".format(
+  #     best_trial.last_result["loss"]))
+  # print("Best trial final validation accuracy: {}".format(
+  #     best_trial.last_result["accuracy"]))
+
+  # best_trained_model = Net(best_trial.config["l1"], best_trial.config["l2"])
+  # device = "cpu"
+  # if torch.cuda.is_available():
+  #     device = "cuda:0"
+  #     if gpus_per_trial > 1:
+  #         best_trained_model = nn.DataParallel(best_trained_model)
+  # best_trained_model.to(device)
+
+  # best_checkpoint_dir = best_trial.checkpoint.value
+  # model_state, optimizer_state = torch.load(os.path.join(
+  #     best_checkpoint_dir, "checkpoint"))
+  # best_trained_model.load_state_dict(model_state)
+
+  # test_acc = test_accuracy(best_trained_model, device)
+  # print("Best trial test set accuracy: {}".format(test_acc))
+
 if __name__ == "__main__":
   ### Extract data for training, validation and testing
   node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, \
@@ -314,71 +445,26 @@ if __name__ == "__main__":
   mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
     compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
 
-  def run_tuning():
-    config = {
-        "n_epoch": tune.choice([5, 10, 50]),
-        "batch_size": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
-        # "lr": tune.loguniform(1e-4, 1e-1),
-        "batch_size": tune.choice([2, 4, 8, 16])
-    }
-    scheduler = ASHAScheduler(
-        metric="loss",
-        mode="min",
-        max_t=max_num_epochs,
-        grace_period=1,
-        reduction_factor=2)
-    reporter = CLIReporter(
-        # parameter_columns=["l1", "l2", "lr", "batch_size"],
-        metric_columns=["loss", "accuracy", "training_iteration"])
-    result = tune.run(
-        partial(train_cifar, data_dir=data_dir),
-        resources_per_trial={"cpu": 2, "gpu": gpus_per_trial},
-        config=config,
-        num_samples=num_samples,
-        scheduler=scheduler,
-        progress_reporter=reporter)
-
-    # best_trial = result.get_best_trial("loss", "min", "last")
-    # print("Best trial config: {}".format(best_trial.config))
-    # print("Best trial final validation loss: {}".format(
-    #     best_trial.last_result["loss"]))
-    # print("Best trial final validation accuracy: {}".format(
-    #     best_trial.last_result["accuracy"]))
-
-    # best_trained_model = Net(best_trial.config["l1"], best_trial.config["l2"])
-    # device = "cpu"
-    # if torch.cuda.is_available():
-    #     device = "cuda:0"
-    #     if gpus_per_trial > 1:
-    #         best_trained_model = nn.DataParallel(best_trained_model)
-    # best_trained_model.to(device)
-
-    # best_checkpoint_dir = best_trial.checkpoint.value
-    # model_state, optimizer_state = torch.load(os.path.join(
-    #     best_checkpoint_dir, "checkpoint"))
-    # best_trained_model.load_state_dict(model_state)
-
-    # test_acc = test_accuracy(best_trained_model, device)
-    # print("Best trial test set accuracy: {}".format(test_acc))
-
   if args.run_tuning:
-    raise NotImplementedError()
     run_tuning()
   else:
-    run_model(args,
+
+    raise NotImplementedError("I am not sure if the implementation of ray tune can be generalized to running model individually.")
+    param_config                  = get_param_config(NUM_EPOCH, BATCH_SIZE)
+    run_model(param_config,
+              args                =args,
               # logger
-              logger,
-              logger_2,
+              logger              = logger,
+              logger_2            = logger_2,
               # data
-              full_data,
+              full_data           = full_data,
               # code params
-              node_features,
-              edge_features,
-              mean_time_shift_src,
-              std_time_shift_src,
-              mean_time_shift_dst,
-              std_time_shift_dst,
+              node_features       = node_features,
+              edge_features       = edge_features,
+              mean_time_shift_src = mean_time_shift_src,
+              std_time_shift_src  = std_time_shift_src,
+              mean_time_shift_dst = mean_time_shift_dst,
+              std_time_shift_dst  = std_time_shift_dst,
               # config params
-              device,
-              MODEL_SAVE_PATH
-              )
+              device              = device,
+              MODEL_SAVE_PATH     = MODEL_SAVE_PATH)

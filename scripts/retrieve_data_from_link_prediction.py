@@ -381,25 +381,25 @@ if __name__ == "__main__":
   # plt.show()
 
 
-  log_file = '1641588473.0998917' # model where =weighted_loss_method= is =share_selected_random_weight_per_window= + weight range is 0 - 500
-  c11 = LinkPredictionCrawler(log_file)
-  # c11.plot()
-  losses.append(c11.get_return()[0])
-  aucs.append(c11.get_return()[1])
-  aps.append(c11.get_return()[2])
-  epoches.append(c11.get_return()[3])
-  log_files.append(log_file)
-  # pos_edges_weight = c11.crawl_data_v2(c11.nodes_and_edges_weight_log_path)
-  # col_1 = pos_edges_weight.reshape(-1)
-  # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[1])] for i in range(pos_edges_weight.shape[0])]).reshape(-1)
-  # col_name = ['weight', 'batch_idx']
-  # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
-  # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
-  # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
-  # plot_path = str(base_path / f'plot/edges_weight_{log_file}.png')
-  # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
-  # # plt.savefig(plot_path)
-  # plt.show()
+  # log_file = '1641588473.0998917' # model where =weighted_loss_method= is =share_selected_random_weight_per_window= + weight range is 0 - 500
+  # c11 = LinkPredictionCrawler(log_file)
+  # # c11.plot()
+  # losses.append(c11.get_return()[0])
+  # aucs.append(c11.get_return()[1])
+  # aps.append(c11.get_return()[2])
+  # epoches.append(c11.get_return()[3])
+  # log_files.append(log_file)
+  # # pos_edges_weight = c11.crawl_data_v2(c11.nodes_and_edges_weight_log_path)
+  # # col_1 = pos_edges_weight.reshape(-1)
+  # # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[1])] for i in range(pos_edges_weight.shape[0])]).reshape(-1)
+  # # col_name = ['weight', 'batch_idx']
+  # # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # # plot_path = str(base_path / f'plot/edges_weight_{log_file}.png')
+  # # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # # plt.savefig(plot_path)
+  # # plt.show()
 
   # log_file = '1641597198.5721123' # model where =weighted_loss_method= is =share_selected_random_weight_per_window= + weight range is 0 - 500
   # c12 = LinkPredictionCrawler(log_file)
@@ -421,9 +421,29 @@ if __name__ == "__main__":
   # # # plt.savefig(plot_path)
   # # plt.show()
 
+  log_file = '1641977944.7344809' # model with =use_random_weight_to_benchmark_ef_iwf_1= flag is True + weight range is 0 - 5
+  c13 = LinkPredictionCrawler(log_file)
+  # c10.plot()
+  losses.append(c13.get_return()[0])
+  aucs.append(c13.get_return()[1])
+  aps.append(c13.get_return()[2])
+  epoches.append(c13.get_return()[3])
+  log_files.append(log_file)
+  # pos_edges_weight = c10.crawl_data_v2(c10.nodes_and_edges_weight_log_path)
+  # col_1 = pos_edges_weight.reshape(-1)
+  # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[1])] for i in range(pos_edges_weight.shape[0])]).reshape(-1)
+  # col_name = ['weight', 'batch_idx']
+  # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # plot_path = str(base_path / 'plot/edges_weight_1640898429-909531.png')
+  # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # plt.savefig(plot_path)
+  # plt.show()
+
 
   list_ = []
-  for i,j in zip(c10.get_return(),c11.get_return()):
+  for i,j in zip(c10.get_return(),c13.get_return()):
     shortest_len = return_min_length_of_list_members([i,j])
     # shortest_len = min(i.shape[0], j.shape[0])
     i = i[:shortest_len]
