@@ -32,7 +32,8 @@ parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia 
                     default='wikipedia')
 parser.add_argument('--bs', type=int, default=200, help='Batch_size')
 # parser.add_argument('--bs', type=int, default=1000, help='Batch_size')
-parser.add_argument('--prefix', type=str, default=None, help='Prefix to name the checkpoints')
+parser.add_argument('--prefix', type=str, default=None, help='Deprecated: Prefix to name the checkpoints')
+parser.add_argument('--custom_prefix', type=str, default=None, help='Prefix to name the checkpoints')
 parser.add_argument('--n_degree', type=int, default=10, help='Number of neighbors to sample')
 parser.add_argument('--n_head', type=int, default=2, help='Number of heads used in attention layer')
 parser.add_argument('--n_epoch', type=int, default=50, help='Number of epochs')
@@ -127,6 +128,7 @@ TIME_DIM = args.time_dim
 USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
+assert args.prefix is None, "args.prefix is deprecated. use custom_prefix instead"
 
 # use_weight = True
 # use_weight = args.use_ef_iwf_weight
@@ -238,6 +240,7 @@ def run_model(
   MEMORY_DIM = args.memory_dim
 
   check_point = CheckPoint()
+  check_point.custom_prefix = args.custom_prefix
   check_point.is_node_classification = False
   check_point.log_timestamp = log_time
 

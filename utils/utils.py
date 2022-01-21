@@ -8,10 +8,15 @@ import pandas as pd
 import logging
 from pathlib import Path
 
-def return_min_length_of_list_members(list_of_vars):
+def return_min_length_of_list_members(list_of_vars, is_flatten_list=False):
   min_length = float('inf')
   for i in list_of_vars:
-    min_length = min(min_length, len(i))
+    if is_flatten_list:
+      i = np.array(i).reshape(-1)
+    len_ = len(i)
+    min_length = min(min_length, len_)
+
+    # min_length = min(min_length, len(i))
   return min_length
 
 def get_an_arg_name(my_args, arg_name, return_if_args_value_is_true=True):
@@ -38,6 +43,7 @@ class CheckPoint():
         self.prefix = None
         self.ws_idx = None
         self.ws_max = None
+        self.custom_prefix = 'None' # custom_prefix can be None. it value is from args.prefix.
         self.epoch_max = None
         self.run_idx = None
         self.log_timestamp = None
@@ -64,7 +70,7 @@ class CheckPoint():
         checkpoint_path = None
         general_checkpoint_path = None
 
-        general_checkpoint_path = Path(f'prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx{self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
+        general_checkpoint_path = Path(f'custom_prefix={self.custom_prefix}-prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx={self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
 
         if self.is_node_classification:
             raise NotImplementedError()
@@ -73,7 +79,7 @@ class CheckPoint():
             checkpoint_dir = 'link-prediction'
 
         Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-        checkpoint_path = str(Path(checkpoint_dir) / general_checkpoint_path)
+        checkpoint_path = str(Path('saved_checkpoints') /Path(checkpoint_dir) / general_checkpoint_path)
 
         assert self.data in checkpoint_path
         assert str(self.bs) in checkpoint_path
@@ -283,7 +289,8 @@ def get_end_idx(current_window_idx, window_size):
 def compute_ef(edges_in_current_window, window_size):
   _, _, current_uniq_edges_freq =  get_uniq_edges_freq_in_window(edges_in_current_window)
 
-  ef = current_uniq_edges_freq
+  # ef = current_uniq_edges_freq * 0.1
+  ef = 1/current_uniq_edges_freq * 0.1
   # ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
 
   return ef

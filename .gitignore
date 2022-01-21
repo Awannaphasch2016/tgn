@@ -253,3 +253,4 @@ todo.txt
 /plot/
 *.out
 *.err
+/link-prediction/*
