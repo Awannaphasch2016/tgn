@@ -6,7 +6,9 @@ class Crawler:
     def plot(self):
         pass
     def get_return(self):
-        pass
+        raise DeprecationWarning()
+        raise NotImplementedError()
+
     def get_ws_val(self, line):
         pass
     def get_epoch_val(self, line):

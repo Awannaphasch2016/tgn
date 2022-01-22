@@ -6,6 +6,30 @@ import seaborn as sns
 from utils.crawler import Crawler
 from utils.utils import return_min_length_of_list_members
 
+def get_shape_of_val_in_list(val):
+  return [i.shape for i in val]
+
+def get_len_of_val_in_list(val):
+  return [len(i) for i in val]
+
+def apply_off_set_ind(ind_list, ind_shift_val):
+  tmp = []
+  for i in ind_list:
+    shifted_ind = i - ind_shift_val
+    if shifted_ind >= 0:
+      tmp.append(shifted_ind)
+  return tmp
+
+def get_mean_val_from_same_period(val, off_set_ind, begin_idx_list, end_idx_list):
+  tmp = []
+  val_np = np.array(val)
+  begin_idx_list = apply_off_set_ind(begin_idx_list, off_set_ind)
+  end_idx_list = apply_off_set_ind(end_idx_list, off_set_ind)
+  for b,e in zip(begin_idx_list, end_idx_list):
+    if e <= val_np.shape[0]:
+      tmp.append(np.mean(val_np[b:e, :], axis=0))
+  return np.array(tmp)
+
 def return_rolling_sum_of_its_member(list_of_vars):
   tmp = []
   for i in list_of_vars:
@@ -32,14 +56,14 @@ def get_xy_values(x, y):
 
   return xy_values
 
-def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, config = {}, plot_path = None, savefig=False, use_min_length_of_list_members=False, use_time_as_x_axis=False, test_performance_on_the_same_period=False):
+def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, end_ind_of_init_windows,  config = {}, plot_path = None, savefig=False, use_min_length_of_list_members=False, use_time_as_x_axis=False, test_performance_on_the_same_period=False):
 
 
   assert test_performance_on_the_same_period + use_min_length_of_list_members < 2
 
   if test_performance_on_the_same_period:
       list_of_list_of_test_instances_end_idx = return_list_of_test_data_on_the_same_period(header_dicts)
-      list_of_window_idxs_with_the_same_period = get_list_of_window_idx_with_same_period(vc.header_dicts, list_of_list_of_test_instances_end_idx)
+      list_of_window_begin_idxs_with_the_same_period, list_of_window_end_idxs_with_the_same_period  = get_list_of_window_idx_with_same_period(vc.header_dicts, list_of_list_of_test_instances_end_idx)
 
   # assert len(losses) == 2
   # assert len(aucs) == 2
@@ -80,8 +104,11 @@ def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, config = {}, 
   for i, (loss, t) in enumerate(zip(losses, times)):
     if test_performance_on_the_same_period:
       # :NOTE: assume that len of auc is the same as total number of window
-      loss = np.array(loss)[list_of_window_idxs_with_the_same_period[i]]
-      t = np.array(t)[list_of_window_idxs_with_the_same_period[i]]
+      loss = get_mean_val_from_same_period(loss, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+      t = get_mean_val_from_same_period(t, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+
+      # t = np.array(t)[list_of_window_begin_idxs_with_the_same_period[i]]
+
     if use_min_length_of_list_members:
       loss = loss[:min_length]
       t = t[:min_length]
@@ -97,8 +124,10 @@ def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, config = {}, 
   for i, (auc, t) in enumerate(zip(aucs, times)):
     if test_performance_on_the_same_period:
       # :NOTE: assume that len of auc is the same as total number of window
-      auc = np.array(auc)[list_of_window_idxs_with_the_same_period[i]]
-      t = np.array(t)[list_of_window_idxs_with_the_same_period[i]]
+      auc = get_mean_val_from_same_period(auc, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+
+      t = get_mean_val_from_same_period(t, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+      # t = np.array(t)[list_of_window_begin_idxs_with_the_same_period[i]]
 
     if use_min_length_of_list_members:
       auc = auc[:min_length]
@@ -120,8 +149,10 @@ def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, config = {}, 
   for i, (ap, t) in enumerate(zip(aps, times)):
     if test_performance_on_the_same_period:
       # :NOTE: assume that len of auc is the same as total number of window
-      ap = np.array(ap)[list_of_window_idxs_with_the_same_period[i]]
-      t = np.array(t)[list_of_window_idxs_with_the_same_period[i]]
+      ap = get_mean_val_from_same_period(ap, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+
+      t = get_mean_val_from_same_period(t, end_ind_of_init_windows[i], list_of_window_begin_idxs_with_the_same_period[i], list_of_window_end_idxs_with_the_same_period[i])
+      # t = np.array(t)[list_of_window_begin_idxs_with_the_same_period[i]]
     if use_min_length_of_list_members:
       ap = ap[:min_length]
       t = t[:min_length]
@@ -207,12 +238,15 @@ class LinkPredictionCrawler(Crawler):
     self.complete_ws_len = complete_ws_len
     self.log_file = log_file
     self.header_dict = header_dict
+    self.end_idx_of_init_window = 1 # :NOTE: this only works until init_window_size is not the same as batch_size
 
   def plot(self, savefig=False):
     draw(self.loss, self.auc, self.ap, self.epoch , self.plot_path, savefig=savefig)
 
   def get_return(self):
-    return self.header_dict,self.log_file, self.loss, self.auc, self.ap, self.epoch, self.times
+    raise DeprecationWarning()
+    raise NotImplementedError()
+    return self.header_dict,self.log_file, self.loss, self.auc, self.ap, self.epoch, self.times, self.end_idx_of_init_window
 
   def get_ws_val(self, line):
     ws_val = line.split(" ")[-1].rstrip()
@@ -355,16 +389,18 @@ class ValueCollection():
     self.times = []
     self.log_files = []
     self.header_dicts = []
+    self.end_ind_of_init_windows  = []
 
   def append_value(self, crawler):
-    self.header_dicts.append(crawler.get_return()[0])
-    self.log_files.append(crawler.get_return()[1])
-    self.losses.append(crawler.get_return()[2])
-    self.aucs.append(crawler.get_return()[3])
-    self.aps.append(crawler.get_return()[4])
-    self.epoches.append(crawler.get_return()[5])
-    self.times.append(crawler.get_return()[6])
-    # self.log_files.append(log_file)
+
+    self.header_dicts.append(crawler.header_dict)
+    self.log_files.append(crawler.log_file)
+    self.losses.append(crawler.loss)
+    self.aucs.append(crawler.auc)
+    self.aps.append(crawler.ap)
+    self.epoches.append(crawler.epoch)
+    self.times.append(crawler.times)
+    self.end_ind_of_init_windows.append(crawler.end_idx_of_init_window)
 
 
 def get_list_of_batch_size(header_dicts):
@@ -409,34 +445,59 @@ def return_list_of_test_data_on_the_same_period(header_dicts):
   return return_list_of_instance_end_idx_with_max_batch_size(header_dicts)
 
 def get_list_of_window_idx_with_same_period(header_dicts, list_of_test_end_idx_on_the_same_period):
+  """
+  :NOTE: I should consider starting to refactor this function when I find it difficult to conceptualize/extend/modify the function.
+  """
   data_size = get_data_size(header_dicts)
+  max_bs = get_largest_batch_size_from_list(header_dicts)
+  # list_of_window_idx_with_same_period = []
+  list_of_window_begin_idx_with_same_period = []
+  list_of_window_end_idx_with_same_period = []
 
-  list_of_window_idx_with_same_period = []
   for idx, i in enumerate(header_dicts):
     bs = i['batch_size']
+    multiple_bs = int(max_bs/bs)
+    # multiple_bs
     total_number_of_window = get_number_of_window(data_size,bs)
     test_instances_end_idx_list = list_of_test_instances_end_idx(bs, total_number_of_window)
     window_idx_list = list(range(len(test_instances_end_idx_list)))
 
-    window_idx_with_same_period = []
+    window_begin_idx_with_same_period = []
+    window_end_idx_with_same_period = []
+
     for j in list_of_test_end_idx_on_the_same_period:
-      t_ = np.array((test_instances_end_idx_list, list(range(len(test_instances_end_idx_list))))).T
+      arange_idx_list = list(range(len(test_instances_end_idx_list)))
+      t_ = np.array((test_instances_end_idx_list, list(map(lambda x: x+ 1, arange_idx_list)))).T
+      # t_ = np.array((test_instances_end_idx_list, list(map(lambda x: x+ 1, range(len(test_instances_end_idx_list)))))).T
       tmp = list(filter(lambda x: j == x[0], t_ ))[0][1]
-      window_idx_with_same_period.append(tmp)
+
+      if tmp != 0 and (tmp + multiple_bs) * bs <= data_size:
+      # if (tmp + multiple_bs) * bs <= data_size:
+        window_begin_idx_with_same_period.append(tmp)
+        window_end_idx_with_same_period.append(tmp + multiple_bs)
+
       # for idxx, jj in enumerate(test_instances_end_idx_list):
         # if jj > j:
         #   assert idxx - 1 >= 0
         #   list_of_window_idx_with_same_period.append(idxx)
         #   break
 
+    assert len(window_begin_idx_with_same_period) == len(window_end_idx_with_same_period)
     # :NOTE: I patched the error by excluding last element because reddit_10000 has 9999 instances not 10000.
-    list_of_window_idx_with_same_period.append(window_idx_with_same_period[:-1])
+    # list_of_window_begin_idx_with_same_period.append(window_begin_idx_with_same_period[:-1])
+    # list_of_window_end_idx_with_same_period.append(window_end_idx_with_same_period[:-1])
+    list_of_window_begin_idx_with_same_period.append(window_begin_idx_with_same_period)
+    list_of_window_end_idx_with_same_period.append(window_end_idx_with_same_period)
 
-  for x in list_of_window_idx_with_same_period:
+
+  for x,y in zip(list_of_window_begin_idx_with_same_period, list_of_window_end_idx_with_same_period):
     # :NOTE: I patched the error by excluding last element because reddit_10000 has 9999 instances not 10000.
-    assert len(list_of_test_end_idx_on_the_same_period) ==  len(x) + 1
+    assert len(x) == len(y)
 
-  return list_of_window_idx_with_same_period
+    assert len(list_of_test_end_idx_on_the_same_period) in [len(x) + 1 , len(x)]
+
+
+  return list_of_window_begin_idx_with_same_period, list_of_window_end_idx_with_same_period
 
 
 
@@ -465,11 +526,11 @@ if __name__ == "__main__":
 
 
 
-  # # log_file = '1640232708.151559'
-  # log_file = '1640243549.1885495' # original; use_weight = False ; batch size = 200
-  # c2 = LinkPredictionCrawler(log_file)
-  # # c2.plot()
-  # vc.append_value(c2)
+  # log_file = '1640232708.151559'
+  log_file = '1640243549.1885495' # original; use_weight = False ; batch size = 200
+  c2 = LinkPredictionCrawler(log_file)
+  # c2.plot()
+  vc.append_value(c2)
 
   # # log_file = '1640232708.151559'
   # # log_file = '1640298667.0700464' # use_weight = True
@@ -658,15 +719,15 @@ if __name__ == "__main__":
   # times.append(c15.get_return()[4])
   # log_files.append(log_file)
 
-  # log_file = '1642416734.1726859' # original + epoch 5 + batch size 1000
-  # c16 = LinkPredictionCrawler(log_file)
-  # # c16.plot()
-  # vc.append_value(c16)
+  log_file = '1642416734.1726859' # original + epoch 5 + batch size 1000
+  c16 = LinkPredictionCrawler(log_file)
+  # c16.plot()
+  vc.append_value(c16)
 
-  # log_file = '1642416474.9904623' # original + epoch 5 + batch size 2000
-  # c17 = LinkPredictionCrawler(log_file)
-  # # c17.plot()
-  # vc.append_value(c17)
+  log_file = '1642416474.9904623' # original + epoch 5 + batch size 2000
+  c17 = LinkPredictionCrawler(log_file)
+  # c17.plot()
+  vc.append_value(c17)
 
 
   # log_file = '1642432356.5350947' # original + epoch 3 + batch size 1000
@@ -679,10 +740,10 @@ if __name__ == "__main__":
   # times.append(c18.get_return()[4])
   # log_files.append(log_file)
 
-  log_file = '1642599016.4373028' # original + epoch 5 + batch size 1000 + ef_iwf * 1
-  c19 = LinkPredictionCrawler(log_file)
-  # c17.plot()
-  vc.append_value(c19)
+  # log_file = '1642599016.4373028' # original + epoch 5 + batch size 1000 + ef_iwf * 1
+  # c19 = LinkPredictionCrawler(log_file)
+  # # c17.plot()
+  # vc.append_value(c19)
 
   # log_file = '1642598633.3073912' # original + epoch 5 + batch size 1000 + ef_iwf * 50
   # c20 = LinkPredictionCrawler(log_file)
@@ -699,10 +760,10 @@ if __name__ == "__main__":
   # # c17.plot()
   # vc.append_value(c22)
 
-  log_file = '1642763194.1611047' # inverse_ef-iwf * 1 + epoch 5 + batch size 1000
-  c23 = LinkPredictionCrawler(log_file)
-  # c17.plot()
-  vc.append_value(c23)
+  # log_file = '1642763194.1611047' # inverse_ef-iwf * 1 + epoch 5 + batch size 1000
+  # c23 = LinkPredictionCrawler(log_file)
+  # # c17.plot()
+  # vc.append_value(c23)
 
   # log_file = '1642763750.673035' # inverse_ef-iwf * 50 + epoch 5 + batch size 1000
   # c24 = LinkPredictionCrawler(log_file)
@@ -742,14 +803,14 @@ if __name__ == "__main__":
 
 
   ## args for draw_multiple function
-  # test_performance_on_the_same_period = True
-  test_performance_on_the_same_period = False
+  test_performance_on_the_same_period = True
+  # test_performance_on_the_same_period = False
 
   # use_min_length_of_list_members = True
   use_min_length_of_list_members = False
 
-  savefig = True
-  # savefig = False
+  # savefig = True
+  savefig = False
 
   # use_time_as_x_axis = True
   use_time_as_x_axis = False
@@ -776,4 +837,4 @@ if __name__ == "__main__":
 
   # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=True)
   # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=False, return_min_length_of_list_members=False)
-  draw_multiple(vc.header_dicts,vc.losses, vc.aucs, vc.aps, vc.epoches, vc.times, plot_path=plot_path,savefig=savefig, use_min_length_of_list_members=use_min_length_of_list_members, use_time_as_x_axis=use_time_as_x_axis, test_performance_on_the_same_period=test_performance_on_the_same_period)
+  draw_multiple(vc.header_dicts,vc.losses, vc.aucs, vc.aps, vc.epoches, vc.times, vc.end_ind_of_init_windows ,plot_path=plot_path,savefig=savefig, use_min_length_of_list_members=use_min_length_of_list_members, use_time_as_x_axis=use_time_as_x_axis, test_performance_on_the_same_period=test_performance_on_the_same_period)
