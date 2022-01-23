@@ -8,9 +8,10 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-from evaluation.evaluation import eval_edge_prediction, sliding_window_evaluation, train_val_test_evaluation
+# from evaluation.evaluation import eval_edge_prediction, sliding_window_evaluation, train_val_test_evaluation
+from evaluation.evaluation import eval_edge_prediction, train_val_test_evaluation, SlidingWindow
 from model.tgn import TGN
-from utils.utils import EarlyStopMonitor, setup_logger, CheckPoint
+from utils.utils import EarlyStopMonitor, setup_logger, CheckPoint, ArgsContraint
 from utils.data_processing import get_data, compute_time_statistics, Data
 
 
@@ -97,7 +98,7 @@ parser.add_argument('--n_gpu', type=int, default=1,
                     help='number of gpu to use')
 parser.add_argument('--max_random_weight_range', type=int, default=None,
                     help='maximum range of random weight method')
-
+parser.add_argument('--ws_multiplier', type=int, default=1, help='value of window_size is a multiple of batch_size')
 
 def prep_args():
   try:
@@ -128,7 +129,7 @@ TIME_DIM = args.time_dim
 USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
-assert args.prefix is None, "args.prefix is deprecated. use custom_prefix instead"
+WINDOW_SIZE = args.ws_multiplier * BATCH_SIZE
 
 # use_weight = True
 # use_weight = args.use_ef_iwf_weight
@@ -194,6 +195,7 @@ def get_param_config_for_tuning(args):
       # "batch_size": tune.sample_from(lambda _: 2 ** np.random.randint(2, 9)),
       # "lr": tune.loguniform(1e-4, 1e-1),
       "batch_size": tune.choice([100, 200, 1000, 5000]),
+      # "window_multipler": tune.choice([1,2,3,4]),
       # parameter from
   }
   return config
@@ -222,6 +224,7 @@ def run_model(
 
   # param that will be tuned
   BATCH_SIZE = config['batch_size']
+  # BATCH_SIZE = config['batch_size']
   NUM_EPOCH = config['n_epoch']
 
   # param that will not be tuned
@@ -273,7 +276,6 @@ def run_model(
     optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
     tgn = tgn.to(device)
 
-    num_instance = len(full_data.sources)
     # num_batch = math.ceil(num_instance / BATCH_SIZE)
     # logger.info('num of training instances: {}'.format(num_instance))
     # logger.info('num of batches per epoch: {}'.format(num_batch))
@@ -289,22 +291,34 @@ def run_model(
 
     logger.info('run = {}'.format(i))
 
-    sliding_window_evaluation(tgn,
-                              num_instance,
-                              BATCH_SIZE,
-                              NUM_EPOCH,
-                              logger,
-                              logger_2,
-                              USE_MEMORY,
-                              # MODEL_SAVE_PATH,
-                              args,
-                              optimizer,
-                              # criterion,
-                              full_data,
-                              device,
-                              NUM_NEIGHBORS,
-                              check_point
-                              )
+    sliding_window = SlidingWindow(args)
+    sliding_window.add_dataset(full_data)
+    sliding_window.add_loggers(logger, logger_2)
+    sliding_window.add_checkpoints(check_point)
+    sliding_window.add_hardware_params(device)
+    sliding_window.add_model_training_params(optimizer)
+    sliding_window.add_model_params(NUM_NEIGHBORS)
+    sliding_window.add_model(tgn)
+    sliding_window.pre_evaluation()
+    sliding_window.evaluate()
+
+    # sliding_window_evaluation(tgn,
+    #                           num_instance,
+    #                           BATCH_SIZE,
+    #                           # WINDOW_SIZE,
+    #                           NUM_EPOCH,
+    #                           logger,
+    #                           logger_2,
+    #                           USE_MEMORY,
+    #                           # MODEL_SAVE_PATH,
+    #                           args,
+    #                           optimizer,
+    #                           # criterion,
+    #                           full_data,
+    #                           device,
+    #                           NUM_NEIGHBORS,
+    #                           check_point
+    #                           )
 
     # train_val_test_evaluation(tgn,
     #                           num_instance,
@@ -426,6 +440,11 @@ if __name__ == "__main__":
   new_node_test_data, timestamps, observed_edges_mask = get_data(DATA,
                                 different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
 
+  # args_constraint(args.prefix, full_data.data_size, WINDOW_SIZE, BATCH_SIZE, args.backprop_every)
+  args_constraint = ArgsContraint()
+  args_constraint.args_naming_contraint(args.prefix)
+  args_constraint.args_window_sliding_contraint(full_data.data_size, WINDOW_SIZE, BATCH_SIZE)
+  args_constraint.args_window_sliding_training(args.backprop_every)
 
   # # Initialize training neighbor finder to retrieve temporal graph
   # train_ngh_finder = get_neighbor_finder(train_data, args.uniform)

@@ -8,6 +8,23 @@ import pandas as pd
 import logging
 from pathlib import Path
 
+
+class ArgsContraint:
+
+  # def args_constraint(self, prefix, data_size, window_size, batch_size):
+  #   args_naming_contraint(prefix)
+  #   args_window_sliding_contraint(data_size, window_size, batch_size)
+
+  def args_naming_contraint(self, prefix):
+    assert prefix is None, "args.prefix is deprecated. use custom_prefix instead"
+
+  def args_window_sliding_contraint(self, data_size, window_size, batch_size):
+    assert data_size/window_size == int(data_size/window_size)
+    assert window_size/batch_size == int(window_size/batch_size)
+
+  def args_window_sliding_training(self, backprop_every):
+    assert backprop_every == 1 # NOTE: current implementation of ensemble will assume backprop_every to be 1
+
 def return_min_length_of_list_members(list_of_vars, is_flatten_list=False):
   min_length = float('inf')
   for i in list_of_vars:
@@ -92,19 +109,6 @@ class CheckPoint():
 
         return checkpoint_path
 
-def get_sliding_window_params(num_instance, full_data, batch_size):
-
-  num_instances_shift = batch_size * 1 # 100
-
-  # init_train_data = BATCH_SIZE
-  init_train_data = math.ceil(num_instance * 0.001)
-  init_train_data = batch_size * max(1,math.floor(init_train_data/num_instances_shift))
-
-  total_num_ws =  math.floor(num_instance/num_instances_shift) # 6
-  init_num_ws = math.floor(init_train_data/num_instances_shift) #6
-  left_num_ws = total_num_ws - init_num_ws
-
-  return num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws
 
 def setup_logger(formatter, name, log_file, level=logging.INFO):
     """
@@ -214,57 +218,57 @@ def get_conditions_node_classification(args):
 
   return weighted_loss_method
 
-def get_conditions(args):
-  if args.use_ef_iwf_weight:
-    assert args.max_random_weight_range is None
-    prefix = 'use_ef_iwf_weight'
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
-    compute_xf_iwf_with_sigmoid = False
-  elif args.use_sigmoid_ef_iwf_weight:
-    raise NotImplementedError("I don't expect this to be used anymore.")
-    prefix = "use_sigmoid_ef_iwf_weight"
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
-    compute_xf_iwf_with_sigmoid = True
-  elif args.use_nf_iwf_neg_sampling:
-    assert args.max_random_weight_range is None
-    prefix = "use_nf_iwf_neg_sampling"
-    neg_sample_method = "nf_iwf"
-    neg_edges_formation = "sampled_src_and_sampled_dst"
-    weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
-    compute_xf_iwf_with_sigmoid = False
-  elif args.use_random_weight_to_benchmark_ef_iwf:
-    assert args.max_random_weight_range is not None
-    prefix = "use_random_weight_to_benchmark_ef_iwf"
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
-    compute_xf_iwf_with_sigmoid = False
-  elif args.use_random_weight_to_benchmark_ef_iwf_1:
-    assert args.max_random_weight_range is not None
-    prefix = "use_share_selected_random_weight_per_window_to_benchmark_ef_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
-    compute_xf_iwf_with_sigmoid = False
-  else:
-    assert args.max_random_weight_range is None
-    prefix = "original"
-    neg_sample_method = "random"
-    neg_edges_formation = "original_src_and_sampled_dst"
-    weighted_loss_method = "no_weight"
-    compute_xf_iwf_with_sigmoid = False
+# def get_conditions(args):
+#   if args.use_ef_iwf_weight:
+#     assert args.max_random_weight_range is None
+#     prefix = 'use_ef_iwf_weight'
+#     neg_sample_method = "random"
+#     neg_edges_formation = "original_src_and_sampled_dst"
+#     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+#     compute_xf_iwf_with_sigmoid = False
+#   elif args.use_sigmoid_ef_iwf_weight:
+#     raise NotImplementedError("I don't expect this to be used anymore.")
+#     prefix = "use_sigmoid_ef_iwf_weight"
+#     neg_sample_method = "random"
+#     neg_edges_formation = "original_src_and_sampled_dst"
+#     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+#     compute_xf_iwf_with_sigmoid = True
+#   elif args.use_nf_iwf_neg_sampling:
+#     assert args.max_random_weight_range is None
+#     prefix = "use_nf_iwf_neg_sampling"
+#     neg_sample_method = "nf_iwf"
+#     neg_edges_formation = "sampled_src_and_sampled_dst"
+#     weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
+#     compute_xf_iwf_with_sigmoid = False
+#   elif args.use_random_weight_to_benchmark_ef_iwf:
+#     assert args.max_random_weight_range is not None
+#     prefix = "use_random_weight_to_benchmark_ef_iwf"
+#     neg_sample_method = "random"
+#     neg_edges_formation = "original_src_and_sampled_dst"
+#     weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
+#     compute_xf_iwf_with_sigmoid = False
+#   elif args.use_random_weight_to_benchmark_ef_iwf_1:
+#     assert args.max_random_weight_range is not None
+#     prefix = "use_share_selected_random_weight_per_window_to_benchmark_ef_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
+#     neg_sample_method = "random"
+#     neg_edges_formation = "original_src_and_sampled_dst"
+#     weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
+#     compute_xf_iwf_with_sigmoid = False
+#   else:
+#     assert args.max_random_weight_range is None
+#     prefix = "original"
+#     neg_sample_method = "random"
+#     neg_edges_formation = "original_src_and_sampled_dst"
+#     weighted_loss_method = "no_weight"
+#     compute_xf_iwf_with_sigmoid = False
 
-  # conditions = {}
-  # conditions['neg_sample_method'] = neg_sample_method
-  # conditions['neg_edges_formation'] = neg_edges_formation
-  # conditions['weighted_loss_method'] = weighted_loss_method
-  # conditions['compute_xf_iwf_with_sigmoid'] = compute_xf_iwf_with_sigmoid
+#   # conditions = {}
+#   # conditions['neg_sample_method'] = neg_sample_method
+#   # conditions['neg_edges_formation'] = neg_edges_formation
+#   # conditions['weighted_loss_method'] = weighted_loss_method
+#   # conditions['compute_xf_iwf_with_sigmoid'] = compute_xf_iwf_with_sigmoid
 
-  return prefix, neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
+#   return prefix, neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
 
 def sigmoid(x):
   return torch.nn.functional.sigmoid(torch.from_numpy(x)).cpu().detach().numpy()

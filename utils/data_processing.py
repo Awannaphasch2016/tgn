@@ -7,7 +7,9 @@ from pathlib import Path
 #   pass
 
 class Data:
-  def __init__(self, sources, destinations, timestamps, edge_idxs, labels):
+  def __init__(self, sources, destinations, timestamps, edge_idxs, labels): 
+    assert len(timestamps) == len(sources)
+    self.data_size = len(timestamps)
     self.sources = sources
     self.destinations = destinations
     self.timestamps = timestamps
