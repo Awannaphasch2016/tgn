@@ -9,6 +9,18 @@ import logging
 from pathlib import Path
 
 
+class EF_IWF:
+  def __init__(self):
+    self.dict_ = {}
+
+class NF_IWF:
+  def __init__(self):
+    self.dict_ = {}
+
+class SHARE_SELECTED_RANDOM_WEIGHT:
+  def __init__(self):
+    self.dict_ = {}
+
 class ArgsContraint:
 
   # def args_constraint(self, prefix, data_size, window_size, batch_size):

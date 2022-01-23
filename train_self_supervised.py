@@ -9,7 +9,8 @@ import pickle
 from pathlib import Path
 
 # from evaluation.evaluation import eval_edge_prediction, sliding_window_evaluation, train_val_test_evaluation
-from evaluation.evaluation import eval_edge_prediction, train_val_test_evaluation, SlidingWindow
+from evaluation.evaluation import eval_edge_prediction, train_val_test_evaluation
+from evaluation.sliding_window import SlidingWindow
 from model.tgn import TGN
 from utils.utils import EarlyStopMonitor, setup_logger, CheckPoint, ArgsContraint
 from utils.data_processing import get_data, compute_time_statistics, Data
@@ -299,6 +300,7 @@ def run_model(
     sliding_window.add_model_training_params(optimizer)
     sliding_window.add_model_params(NUM_NEIGHBORS)
     sliding_window.add_model(tgn)
+    sliding_window.init_params_that_tracks_history_of_ws()
     sliding_window.pre_evaluation()
     sliding_window.evaluate()
 
