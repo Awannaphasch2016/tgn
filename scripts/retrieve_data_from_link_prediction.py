@@ -4,21 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from utils.crawler import Crawler
-from utils.utils import return_min_length_of_list_members
+from utils.utils import return_min_length_of_list_members, apply_off_set_ind
 
 def get_shape_of_val_in_list(val):
   return [i.shape for i in val]
 
 def get_len_of_val_in_list(val):
   return [len(i) for i in val]
-
-def apply_off_set_ind(ind_list, ind_shift_val):
-  tmp = []
-  for i in ind_list:
-    shifted_ind = i - ind_shift_val
-    if shifted_ind >= 0:
-      tmp.append(shifted_ind)
-  return tmp
 
 def get_mean_val_from_same_period(val, off_set_ind, begin_idx_list, end_idx_list):
   tmp = []
@@ -176,6 +168,52 @@ def draw_multiple(header_dicts, losses, aucs, aps, epoches, times, end_ind_of_in
   else:
     plt.show()
 
+def plot_tmp(loss, auc, ap, epoch , config = {}, plot_path = None, savefig=False):
+  ylim = None
+  if len(config) > 0:
+    if 'ylim' in config:
+      assert len(config["ylim"]) == 2
+      assert isinstance(config["ylim"][0], tuple)
+      assert len(config["ylim"][0]) == 2
+      ylim = iter(config["ylim"]) # list((min, max), (min,max))
+
+  fig, axs = plt.subplots(1, 3, figsize=(9, 3))
+  # axs[0].plot( loss[:,-1], label = 'loss')
+  for ind,i in enumerate(loss):
+    axs[0].plot( i, label = f'loss_{ind}')
+
+  # auc
+  axs[1].plot(np.zeros(len(loss)))
+  # axs[1].plot( auc[:,-1], label = 'auc')
+  for ind,i in enumerate(auc):
+    axs[1].plot( i, label = f'auc_{ind}')
+  # axs[1].plot( auc, label = 'auc')
+  if ylim is not None:
+    axs[1].set_ylim(*next(ylim))
+  else:
+    axs[1].set_ylim(auc.min(), auc.max())
+
+  # ap
+  axs[2].plot( np.zeros(len(loss)))
+  # axs[2].plot( ap[:,-1], label = 'ap')
+
+  for ind,i in enumerate(ap):
+    axs[2].plot( i, label = f'ap_{ind}')
+  if ylim is not None:
+    axs[2].set_ylim(*next(ylim))
+  else:
+    axs[2].set_ylim(ap.min(), ap.max())
+
+  fig.suptitle('model performance')
+  axs[0].legend()
+  axs[1].legend()
+  axs[2].legend()
+  if savefig:
+    assert plot_path is not None
+    plt.savefig(plot_path)
+  else:
+    plt.show()
+
 def draw(loss, auc, ap, epoch , config = {}, plot_path = None, savefig=False):
 
   ylim = None
@@ -278,6 +316,8 @@ class LinkPredictionCrawler(Crawler):
     tmp["data"] = line.split('data')[-1].split(',')[0].strip("=").strip("'")
     return tmp.copy()
 
+  def get_ensemble_idx_val(self,line):
+    return int(line.split(" ")[-1].rstrip())
 
   def crawl_data(self):
     loss = []
@@ -286,6 +326,7 @@ class LinkPredictionCrawler(Crawler):
     epoch = []
     ws = []
     times = []
+    ensemble_idxs = []
     header_dict = {}
     i = 1
     with open(self.log_path, 'r') as f:
@@ -294,6 +335,7 @@ class LinkPredictionCrawler(Crawler):
         #   exit()
 
         is_ws_exist = True if 'ws' in line and 'DEBUG' in line else False
+        is_ensemble_exist = True if 'ensemble_idx' in line else False
         is_epoch_exist = True if 'epoch' in line and 'DEBUG' in line else False
         is_loss_exist = True if 'mean loss' in line and 'INFO' in line else False
         is_auc_exist = True if 'val auc' in line and 'INFO' in line else False
@@ -304,6 +346,8 @@ class LinkPredictionCrawler(Crawler):
 
         if is_ws_exist:
             ws.append(self.get_ws_val(line))
+        if is_ensemble_exist:
+            ensemble_idxs.append(self.get_ensemble_idx_val(line))
         if is_epoch_exist:
             epoch.append(self.get_epoch_val(line))
         if is_loss_exist:
@@ -337,11 +381,16 @@ class LinkPredictionCrawler(Crawler):
         #   ws.append(ws_val)
 
     # non_missing_len = min(len(loss), len(auc), len(ap), len(epoch))
-    max_epoch = max(epoch)
-    complete_ws_len = min((max(ws)+1) * max_epoch, len(epoch))
+    # max_epoch = max(epoch)
+    max_epoch = max(epoch) + 1 # NOTE: haven't test it much
+    if len(ws) > 0:
+      complete_ws_len = min((max(ws)+1) * max_epoch, len(epoch))
+      if complete_ws_len == (max(ws)+1) * max_epoch:
+        ws = ws[:-1]
+    else:
+      complete_ws_len = len(epoch)
+      # complete_ws_len = max_epoch
 
-    if complete_ws_len == (max(ws)+1) * max_epoch:
-      ws = ws[:-1]
 
     loss = np.array(loss[:complete_ws_len]).reshape(-1, max_epoch)
     auc = np.array(auc[:complete_ws_len]).reshape(-1,max_epoch)
@@ -525,12 +574,11 @@ if __name__ == "__main__":
   # plt.show()
 
 
-
-  # log_file = '1640232708.151559'
-  log_file = '1640243549.1885495' # original; use_weight = False ; batch size = 200
-  c2 = LinkPredictionCrawler(log_file)
-  # c2.plot()
-  vc.append_value(c2)
+  # # log_file = '1640232708.151559'
+  # log_file = '1640243549.1885495' # original; use_weight = False ; batch size = 200
+  # c2 = LinkPredictionCrawler(log_file)
+  # # c2.plot()
+  # vc.append_value(c2)
 
   # # log_file = '1640232708.151559'
   # # log_file = '1640298667.0700464' # use_weight = True
@@ -719,15 +767,15 @@ if __name__ == "__main__":
   # times.append(c15.get_return()[4])
   # log_files.append(log_file)
 
-  log_file = '1642416734.1726859' # original + epoch 5 + batch size 1000
-  c16 = LinkPredictionCrawler(log_file)
-  # c16.plot()
-  vc.append_value(c16)
+  # log_file = '1642416734.1726859' # original + epoch 5 + batch size 1000
+  # c16 = LinkPredictionCrawler(log_file)
+  # # c16.plot()
+  # vc.append_value(c16)
 
-  log_file = '1642416474.9904623' # original + epoch 5 + batch size 2000
-  c17 = LinkPredictionCrawler(log_file)
-  # c17.plot()
-  vc.append_value(c17)
+  # log_file = '1642416474.9904623' # original + epoch 5 + batch size 2000
+  # c17 = LinkPredictionCrawler(log_file)
+  # # c17.plot()
+  # vc.append_value(c17)
 
 
   # log_file = '1642432356.5350947' # original + epoch 3 + batch size 1000
@@ -780,6 +828,25 @@ if __name__ == "__main__":
   # # c17.plot()
   # vc.append_value(c26)
 
+
+  # log_file = '1643032949.2657177' # ensemble incomplete
+  # c27 = LinkPredictionCrawler(log_file)
+  # # c27.plot()
+  # plot_tmp(c27.loss, c27.auc, c27.ap, c27.epoch , c27.plot_path, savefig=False)
+  # vc.append_value(c27)
+
+  # log_file = '1643034547.8263297' # ensemble incomplete
+  # c28 = LinkPredictionCrawler(log_file)
+  # # c27.plot()
+  # plot_tmp(c28.loss, c28.auc, c28.ap, c28.epoch , c28.plot_path, savefig=False)
+  # vc.append_value(c28)
+
+  log_file = '1643034979.244234' # ensemble incomplete + 50 epoch
+  c29 = LinkPredictionCrawler(log_file)
+  # c27.plot()
+  plot_tmp(c29.loss, c29.auc, c29.ap, c29.epoch , c29.plot_path, savefig=False)
+  vc.append_value(c29)
+
   # list_ = []
   # for i,j in zip(c10.get_return(),c13.get_return()):
   #   shortest_len = return_min_length_of_list_members([i,j])
@@ -802,39 +869,39 @@ if __name__ == "__main__":
   # draw(*list_)
 
 
-  ## args for draw_multiple function
-  test_performance_on_the_same_period = True
-  # test_performance_on_the_same_period = False
+  # ## args for draw_multiple function
+  # test_performance_on_the_same_period = True
+  # # test_performance_on_the_same_period = False
 
-  # use_min_length_of_list_members = True
-  use_min_length_of_list_members = False
+  # # use_min_length_of_list_members = True
+  # use_min_length_of_list_members = False
 
-  # savefig = True
-  savefig = False
+  # # savefig = True
+  # savefig = False
 
-  # use_time_as_x_axis = True
-  use_time_as_x_axis = False
+  # # use_time_as_x_axis = True
+  # use_time_as_x_axis = False
 
-  base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
-  vs_log_files = ""
-  for f in vc.log_files:
-    vs_log_files += f.replace('.','-') + '_'
+  # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # vs_log_files = ""
+  # for f in vc.log_files:
+  #   vs_log_files += f.replace('.','-') + '_'
 
-  if use_min_length_of_list_members:
-    # plot_path = str(base_path / f'plot/{log_files[0]}_vs_{log_files[1]}_min_length=T.png')
-    # plot_path = str(base_path / f'plot/{vs_log_files}min_length=T.png')
-    is_min_length =  "T"
-  else:
-    is_min_length =  "F"
-    # plot_path = str(base_path / f'plot/{log_files[0]}_vs_{log_files[1]}_min_length=F.png')
-    # plot_path = str(base_path / f'plot/{vs_log_files}min_length=F.png')
+  # if use_min_length_of_list_members:
+  #   # plot_path = str(base_path / f'plot/{log_files[0]}_vs_{log_files[1]}_min_length=T.png')
+  #   # plot_path = str(base_path / f'plot/{vs_log_files}min_length=T.png')
+  #   is_min_length =  "T"
+  # else:
+  #   is_min_length =  "F"
+  #   # plot_path = str(base_path / f'plot/{log_files[0]}_vs_{log_files[1]}_min_length=F.png')
+  #   # plot_path = str(base_path / f'plot/{vs_log_files}min_length=F.png')
 
-  if use_time_as_x_axis:
-    is_time_as_x = "T"
-  else:
-    is_time_as_x = "F"
-  plot_path = str(base_path / f'plot/{vs_log_files}min_length={is_min_length}_use_time_as_x={is_time_as_x}_test_performance_on_the_same_period={test_performance_on_the_same_period}.png')
+  # if use_time_as_x_axis:
+  #   is_time_as_x = "T"
+  # else:
+  #   is_time_as_x = "F"
+  # plot_path = str(base_path / f'plot/{vs_log_files}min_length={is_min_length}_use_time_as_x={is_time_as_x}_test_performance_on_the_same_period={test_performance_on_the_same_period}.png')
 
-  # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=True)
-  # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=False, return_min_length_of_list_members=False)
-  draw_multiple(vc.header_dicts,vc.losses, vc.aucs, vc.aps, vc.epoches, vc.times, vc.end_ind_of_init_windows ,plot_path=plot_path,savefig=savefig, use_min_length_of_list_members=use_min_length_of_list_members, use_time_as_x_axis=use_time_as_x_axis, test_performance_on_the_same_period=test_performance_on_the_same_period)
+  # # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=True)
+  # # draw_multiple(losses, aucs, aps, epoches, plot_path=plot_path,savefig=False, return_min_length_of_list_members=False)
+  # draw_multiple(vc.header_dicts,vc.losses, vc.aucs, vc.aps, vc.epoches, vc.times, vc.end_ind_of_init_windows ,plot_path=plot_path,savefig=savefig, use_min_length_of_list_members=use_min_length_of_list_members, use_time_as_x_axis=use_time_as_x_axis, test_performance_on_the_same_period=test_performance_on_the_same_period)

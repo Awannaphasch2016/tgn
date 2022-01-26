@@ -4,6 +4,7 @@ import torch
 from utils.utils import get_neighbor_finder, MLP, MLP_multiple_class
 
 def select_decoder_and_loss(args,device,feat_dim, n_unique_labels):
+    raise NotImplementedError()
     ## use with pre-training model to substitute prediction head
     if n_unique_labels == 2:
         decoder = MLP(feat_dim, drop=args.drop_out)

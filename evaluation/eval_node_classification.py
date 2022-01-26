@@ -7,7 +7,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder, get_share_selected_random_weight_per_window, get_sliding_window_params
+from utils.utils import EarlyStopMonitor, label_new_unique_nodes_with_budget, find_nodes_ind_to_be_labelled, get_label_distribution, pred_prob_to_pred_labels, get_unique_nodes_labels, get_conditions_node_classification, get_nf_iwf, get_encoder, get_share_selected_random_weight_per_window
 from utils.data_processing import Data
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix
@@ -229,6 +229,7 @@ def train_val_test_evalulation_node_prediction(
     decoder_loss_criterion,
 ):
 
+  raise NotImplementedError("haven't yet make it compatible")
   ## Load models from eheckpoint
   # logger.info('Loading saved TGN model')
   # model_path = f'./saved_models/{args.prefix}-{DATA}.pth'
@@ -350,7 +351,6 @@ def train_val_test_evalulation_node_prediction(
     decoder.load_state_dict(torch.load(best_model_path))
     logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
     decoder.eval()
-
     test_auc, test_acc, cm = eval_node_classification(tgn,
                                                       decoder,
                                                       test_data,
@@ -400,7 +400,7 @@ def cross_entropy_with_weighted_nodes(weight=None):
     return 0 - torch.sum(torch.mul(instances_weight, torch.sum(torch.mul(labels, torch.log(preds)), axis=1)))
   return loss
 
-def select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss_method):
+def select_decoder_and_loss_node_classification(args,device,feat_dim, n_unique_labels, weighted_loss_method):
   ## use with pre-training model to substitute prediction head
 
   # if args.use_nf_iwf_weight:
@@ -445,6 +445,8 @@ def get_nodes_weight(full_data, batch_idx, batch_size, max_weight,start_train_id
     elif weighted_loss_method == "share_selected_random_weight_per_window":
       nodes_weight = get_share_selected_random_weight_per_window(batch_size, max_weight,batch_idx, share_selected_random_weight_per_window_dict)
     elif weighted_loss_method == "no_weight":
+      # nodes_weight = [1 for i in range(batch_size)]
+      # nodes_weight = torch.FloatTensor(nodes_weight)
       pass
     else:
       raise NotImplementedError()
@@ -492,7 +494,7 @@ def sliding_window_evaluation_node_prediction(
   # get decoder and loss
   feat_dim = node_features.shape[1]
   n_unique_labels = full_data.n_unique_labels
-  decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss(args,device,feat_dim, n_unique_labels, weighted_loss_method)
+  decoder_optimizer, decoder, decoder_loss_criterion = select_decoder_and_loss_node_classification(args,device,feat_dim, n_unique_labels, weighted_loss_method)
 
   num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws = get_sliding_window_params(num_instance, full_data, BATCH_SIZE)
 
@@ -715,4 +717,3 @@ def sliding_window_evaluation_node_prediction(
     # nodes
     if USE_MEMORY:
       val_memory_backup = tgn.memory.backup_memory()
-

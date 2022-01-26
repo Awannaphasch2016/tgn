@@ -11,6 +11,45 @@ from utils.data_processing import Data
 from tqdm import tqdm
 import random
 
+def compute_false_positive(confusion_matrix ):
+  FP = confusion_matrix[1,0]
+  return FP
+
+def compute_false_negative(confusion_matrix):
+  TP = confusion_matrix[0,1]
+  return FN
+
+def compute_true_positive(confusion_matrix):
+  TP = confusion_matrix[0,0]
+  return TP
+
+def compute_true_negative(confusion_matrix):
+  TN = confusion_matrix[1,1]
+  return TN
+
+def compute_precision(confusion_matrix):
+  TP = compute_true_positive(confusion_matrix)
+  FP = compute_false_positive(confusion_matrix)
+  return TP/(TP+FP)
+
+def compute_auc_for_ensemble(true_label, mean_pred_score):
+  """
+  :NOTE: I didn't look at literature on how to compute auc for ensemblel. Just trying out things
+  """
+  return roc_auc_score(true_label, mean_pred_score)
+
+def compute_evaluation_score(true_label, pred_score):
+  """
+  NOTE: 1/25/2022 I just realised that I switch value of auc and ap. I decided not to change it back just because it would be easier to compare and retreive auc and ap value from log
+  """
+
+  # pred_score = np.concatenate([pos_prob.cpu().data.detach().numpy(), neg_prob.cpu().data.detach().numpy()])
+  # true_label = np.concatenate([np.ones(size), np.zeros(size)])
+  auc = average_precision_score(true_label, pred_score)
+  ap = roc_auc_score(true_label, pred_score)
+
+  return auc, ap
+
 
 def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
   # Ensures the random sampler uses a seed for evaluation (i.e. we sample always the same

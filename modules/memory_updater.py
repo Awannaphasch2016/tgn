@@ -70,3 +70,5 @@ def get_memory_updater(module_type, memory, message_dimension, memory_dimension,
     return GRUMemoryUpdater(memory, message_dimension, memory_dimension, device)
   elif module_type == "rnn":
     return RNNMemoryUpdater(memory, message_dimension, memory_dimension, device)
+  else:
+    raise NotImplementedError()

@@ -180,17 +180,25 @@ if __name__ == "__main__":
     Path("results/").mkdir(parents=True, exist_ok=True)
 
     # Initialize Model
-    tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
-              edge_features=edge_features, device=device,
+    tgn = TGN(neighbor_finder=train_ngh_finder,
+              node_features=node_features,
+              edge_features=edge_features,
+              device=device,
               n_layers=NUM_LAYER,
-              n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
-              message_dimension=MESSAGE_DIM, memory_dimension=MEMORY_DIM,
+              n_heads=NUM_HEADS,
+              dropout=DROP_OUT,
+              use_memory=USE_MEMORY,
+              message_dimension=MESSAGE_DIM,
+              memory_dimension=MEMORY_DIM,
               memory_update_at_start=not args.memory_update_at_end,
               embedding_module_type=args.embedding_module,
               message_function=args.message_function,
-              aggregator_type=args.aggregator, n_neighbors=NUM_NEIGHBORS,
-              mean_time_shift_src=mean_time_shift_src, std_time_shift_src=std_time_shift_src,
-              mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
+              aggregator_type=args.aggregator,
+              n_neighbors=NUM_NEIGHBORS,
+              mean_time_shift_src=mean_time_shift_src,
+              std_time_shift_src=std_time_shift_src,
+              mean_time_shift_dst=mean_time_shift_dst,
+              std_time_shift_dst=std_time_shift_dst,
               use_destination_embedding_in_message=args.use_destination_embedding_in_message,
               use_source_embedding_in_message=args.use_source_embedding_in_message)
 

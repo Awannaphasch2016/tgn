@@ -5,6 +5,9 @@ from pathlib import Path
 
 # def pretrain_finetune_test(full_data):
 #   pass
+class DataTransformedCollection:
+  def get_data(self):
+    raise NotImplementedError()
 
 class Data:
   def __init__(self, sources, destinations, timestamps, edge_idxs, labels): 

@@ -8,6 +8,131 @@ import pandas as pd
 import logging
 from pathlib import Path
 
+def get_selected_sources_of_batch_idx_relative_to_window_idx(absolute_batch_idx, ws_multiplier):
+  raise NotImplementedError()
+  relative_batch_idx = get_batch_idx_relative_to_window_idx(absolute_batch_idx, ws_multiplier)
+  # absolute_window_idx = convert_batch_idx_to_window_idx(absolute_batch_idx, ws_multiplier)
+
+  relative_batch_idx
+
+def get_batch_idx_relative_to_window_idx(absolute_batch_idx, ws_multiplier):
+  relative_batch_idx = absolute_batch_idx % ws_multiplier
+  return relative_batch_idx # relative ind start at 0
+
+def convert_prob_list_to_binary_list(prob_list):
+  tmp = []
+  for i in prob_list:
+    tmp.append(convert_prob_to_binary(i))
+  return tmp
+
+def convert_prob_to_binary(prob):
+  """
+  pos = 1  and neg = 1
+  """
+  val = 1 if prob > 0.5 else 0
+  return val
+
+def split_a_window_into_batches(window_begin_ind, window_end_ind, batch_size):
+  n_instances = window_end_ind - window_begin_ind + 1
+  assert n_instances/batch_size == int(n_instances/batch_size)
+  n_batches = int(n_instances/batch_size)
+
+  min_ind = min(window_begin_ind, window_end_ind)
+  end_batch_inds = [min_ind]
+  for i in range(n_batches):
+    end_batch_inds.append(((i+1) * batch_size) + min_ind)
+  return end_batch_inds
+
+def right_split_ind_by_window(n_window_to_have_on_right, n_instances, window_size):
+  assert n_instances/window_size == int(n_instances/window_size)
+
+  n_windows = int(n_instances/window_size)
+  begin_inds = [i * window_size for i in range(n_windows)]
+  end_inds = [i + window_size for i in begin_inds]
+
+  begin_ind = 0
+  ind_to_split = begin_inds[-n_window_to_have_on_right]
+  end_ind = end_inds[-n_window_to_have_on_right]
+
+  return begin_ind, ind_to_split, end_ind
+  # return (begin_inds[:-1], end_inds[:-1]), (begin_inds[-1], end_inds[-1])
+
+def convert_ensemble_idx_to_window_idx(ensemble_idx, window_size):
+  return (ensemble_idx * window_size) + window_size
+
+def convert_batch_idx_to_window_idx(batch_idx, ws_multiplier):
+  """return absolute_window_idx that batch_idx is in"""
+  return int(batch_idx/ws_multiplier)
+
+def convert_window_idx_to_batch_idx(window_idx, ws_multiplier):
+  return window_idx * ws_multiplier
+
+def convert_ind_to_n_instances(ind):
+  return ind + 1
+def convert_n_instances_to_ind(n_instances):
+  return n_instances - 1
+
+
+def apply_off_set_ind(ind_list, ind_shift_val):
+  tmp = []
+  for i in ind_list:
+    shifted_ind = i - ind_shift_val
+    if shifted_ind >= 0:
+      tmp.append(shifted_ind)
+  return tmp
+
+def get_conditions(args):
+  if args.use_ef_iwf_weight:
+    assert args.max_random_weight_range is None
+    prefix = 'use_ef_iwf_weight'
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_sigmoid_ef_iwf_weight:
+    raise NotImplementedError("I don't expect this to be used anymore.")
+    prefix = "use_sigmoid_ef_iwf_weight"
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = True
+  elif args.use_nf_iwf_neg_sampling:
+    assert args.max_random_weight_range is None
+    prefix = "use_nf_iwf_neg_sampling"
+    neg_sample_method = "nf_iwf"
+    neg_edges_formation = "sampled_src_and_sampled_dst"
+    weighted_loss_method = "nf_iwf_as_pos_and_neg_edge_weight"
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_random_weight_to_benchmark_ef_iwf:
+    assert args.max_random_weight_range is not None
+    prefix = "use_random_weight_to_benchmark_ef_iwf"
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "random_as_pos_edges_weight" # return new random weight from given range for a new window.
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_random_weight_to_benchmark_ef_iwf_1:
+    assert args.max_random_weight_range is not None
+    prefix = "use_share_selected_random_weight_per_window_to_benchmark_ef_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
+    compute_xf_iwf_with_sigmoid = False
+  else:
+    assert args.max_random_weight_range is None
+    prefix = "original"
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "no_weight"
+    compute_xf_iwf_with_sigmoid = False
+
+  # conditions = {}
+  # conditions['neg_sample_method'] = neg_sample_method
+  # conditions['neg_edges_formation'] = neg_edges_formation
+  # conditions['weighted_loss_method'] = weighted_loss_method
+  # conditions['compute_xf_iwf_with_sigmoid'] = compute_xf_iwf_with_sigmoid
+
+  return prefix, neg_sample_method, neg_edges_formation, weighted_loss_method, compute_xf_iwf_with_sigmoid
+
 
 class EF_IWF:
   def __init__(self):
@@ -28,7 +153,7 @@ class ArgsContraint:
   #   args_window_sliding_contraint(data_size, window_size, batch_size)
 
   def args_naming_contraint(self, prefix):
-    assert prefix is None, "args.prefix is deprecated. use custom_prefix instead"
+    assert prefix is None or len(prefix) == 0 , "args.prefix is deprecated. use custom_prefix instead"
 
   def args_window_sliding_contraint(self, data_size, window_size, batch_size):
     assert data_size/window_size == int(data_size/window_size)
@@ -102,7 +227,6 @@ class CheckPoint():
         general_checkpoint_path = Path(f'custom_prefix={self.custom_prefix}-prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx={self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
 
         if self.is_node_classification:
-            raise NotImplementedError()
             checkpoint_dir = 'node-classification'
         else:
             checkpoint_dir = 'link-prediction'
@@ -183,9 +307,9 @@ def get_encoder(n_uniq_labels):
   enc.fit(pd.DataFrame(range(n_uniq_labels)))
   return enc
 
-# def convert_to_onehot(labels, n_uniq_labels):
-#   one_hot = enc.transform(labels).toarray()
-#   return torch.Tensor(one_hot)
+def convert_to_onehot(labels, n_uniq_labels):
+  one_hot = enc.transform(labels).toarray()
+  return torch.Tensor(one_hot)
 
 def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, sampled_nodes=None):
 
@@ -220,15 +344,19 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
 
 def get_conditions_node_classification(args):
   if args.use_nf_iwf_weight:
+    prefix = "use_nf_iwf_weight"
     weighted_loss_method = 'nf_iwf_as_nodes_weight'
   elif args.use_random_weight_to_benchmark_nf_iwf:
+    prefix = "use_random_weight_to_benchmark_nf_iwf"
     weighted_loss_method = 'random_as_node_weight'
   elif args.use_random_weight_to_benchmark_nf_iwf_1:
+    prefix = "use_share_selected_random_weight_per_window_to_benchmark_nf_iwf" # I decide to change prefix to not be the same as args because args name can change so the prefix should describe behavior instead.
     weighted_loss_method = "share_selected_random_weight_per_window"
   else:
+    prefix = "original"
     weighted_loss_method = 'no_weight'
 
-  return weighted_loss_method
+  return prefix, weighted_loss_method
 
 # def get_conditions(args):
 #   if args.use_ef_iwf_weight:
