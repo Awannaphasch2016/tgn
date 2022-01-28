@@ -352,13 +352,13 @@ def get_criterion():
 #   else;
 #     return None, None
 
-def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, ef_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=None, compute_xf_iwf_with_sigmoid=False):
+def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, ef_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=None, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 
   pos_edges_weight = None
   neg_edges_weight = None
 
   if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
-    pos_edges_weight = get_ef_iwf(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid)
+    pos_edges_weight = get_ef_iwf(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict,compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
   elif weighted_loss_method == "nf_iwf_as_pos_and_neg_edge_weight":
     # use nodes as edges weight
     pos_edges_weight = get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict)
@@ -380,7 +380,7 @@ def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, en
 
   return pos_edges_weight, neg_edges_weight
 
-def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, compute_xf_iwf_with_sigmoid=False):
+def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 
   edges_ = np.vstack((data.sources, data.destinations)).T
   start_past_window_idx = start_train_idx
@@ -389,7 +389,7 @@ def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
   edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
   pos_edges_weight = []
 
-  ef_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, edges_in_past_windows, edges_in_current_window , batch_size, compute_as_nodes=False, return_x_value_dict=True, compute_with_sigmoid=compute_xf_iwf_with_sigmoid)(
+  ef_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, edges_in_past_windows, edges_in_current_window , batch_size, compute_as_nodes=False, return_x_value_dict=True, compute_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)(
     batch_idx, ef_iwf_window_dict, 1)
 
 
@@ -449,7 +449,7 @@ def compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_forma
   else:
     raise NotImplementedError()
 
-  return pos_prob, neg_prob
+  return model, pos_prob, neg_prob
 
 def set_checkpoint_prefix():
   pass

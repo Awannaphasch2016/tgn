@@ -111,7 +111,9 @@ class LinkPredictionArgs(Args):
                         help='maximum range of random weight method')
     parser.add_argument('--ws_multiplier', type=int, default=1, help='value of window_size is a multiple of batch_size')
     parser.add_argument('--ws_framework', type=str, default='forward', help='options of window sliding framework')
-
+    parser.add_argument('--edge_weight_multiplier', type=float, default=1, help='edge_weight_multiplier is used to multiply ef value.')
+    parser.add_argument('--use_time_decay', action='store_true',
+                        help='apply time decay to xf_iwf.')
     return parser
 
 class LinkPredictionDataTransformedCollection(DataTransformedCollection):

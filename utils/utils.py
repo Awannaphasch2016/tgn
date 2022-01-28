@@ -319,6 +319,7 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
   nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
   src_nodes_weight = []
 
+  raise NotImplementedError()
   nf_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)(
     batch_idx, nf_iwf_window_dict, 1)
 
@@ -430,11 +431,14 @@ def get_end_idx(current_window_idx, window_size):
   start_idx = get_start_idx(current_window_idx, window_size)
   return start_idx + window_size
 
-def compute_ef(edges_in_current_window, window_size):
+# def compute_ef(edges_in_current_window, window_size):
+def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None):
   _, _, current_uniq_edges_freq =  get_uniq_edges_freq_in_window(edges_in_current_window)
 
   # ef = current_uniq_edges_freq * 0.1
-  ef = 1/current_uniq_edges_freq * 0.1
+  # ef = 1/current_uniq_edges_freq * 0.1
+  # ef = 1/current_uniq_edges_freq * edge_weight_multiplier
+  ef = current_uniq_edges_freq * edge_weight_multiplier
   # ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
 
   return ef
@@ -490,7 +494,7 @@ def compute_n_window_containing_nodes(nodes_in_past_windows, nodes_in_current_wi
     src_uniq_nodes,_, src_uniq_nodes_freq = get_uniq_nodes_freq_in_window(nodes_in_past_windows[start_idx:end_idx])
 
     # src_nf = [ii for ii in src_uniq_nodes]
-    
+
 
     for j in current_src_uniq_nodes:
       # if j in src_nf:
@@ -563,21 +567,50 @@ def get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes):
   else:
     return get_uniq_edges_freq_in_window(x_in_current_window)
 
-def compute_xf_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=True, return_x_value_dict=False, compute_with_sigmoid=False):
+def compute_continuous_exponential_time_decay(time_length, decay_rate=0.10):
+
+  convert_seconds_to_days = 1/60 * 60 * 24
+  return  (math.e ** (decay_rate * time_length))
+
+def compute_xf_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_as_nodes=True, return_x_value_dict=False, compute_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 
   current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
 
   if compute_as_nodes:
-    xf = compute_nf(x_in_current_window, window_size)
+    xf = compute_nf(x_in_current_window, batch_size)
+    raise NotImplementedError()
+    time_decay_multiplier = compute_continuous_exponential_time_decay(time_diffs)
   else:
-    xf = compute_ef(x_in_current_window, window_size)
+    xf = compute_ef(x_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)
 
-  iwf = compute_iwf(x_in_past_windows, x_in_current_window, window_size, compute_as_nodes=compute_as_nodes)
+    # :NOTE: [source_batch, destination, negative_destination]
+    time_diffs_batch_size = int(time_diffs.shape[0]/3)
+    time_diffs = time_diffs[:-time_diffs_batch_size]
+
+    uniq_edges, _, _ = get_uniq_edges_freq_in_window(x_in_current_window)
+
+    n_source_instances = int(x_in_past_windows.shape[0]/batch_size)
+    offset_idx = n_source_instances # n_sources_instances + n_destination_instances
+    source_nodes = uniq_edges[:, 0]
+    source_nodes_shift =  source_nodes - offset_idx
+
+    selected_time_diffs = time_diffs[source_nodes_shift]
+
+    time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)
+
+  iwf = compute_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_as_nodes=compute_as_nodes)
   xf_iwf =  (xf * iwf)
 
   if compute_with_sigmoid:
+    raise NotImplementedError
     xf_iwf = torch.nn.functional.sigmoid(torch.from_numpy(xf_iwf)).cpu().detach().numpy()
 
+  # time decay
+  if use_time_decay:
+    xf_iwf = xf_iwf * time_decay_multiplier
+
+
+  # :NOTE: I am not sure if the line below is necessary, but it shouldn't hurt performance much if at all.
   xf_iwf += 1 # garantee iwf value to always be > 1
 
   assert iwf.shape[0] == xf.shape[0]

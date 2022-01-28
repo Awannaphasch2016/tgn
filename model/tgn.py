@@ -214,6 +214,8 @@ class TGN(torch.nn.Module):
                                                                               source_node_embedding,
                                                                               edge_times, edge_idxs)
 
+
+
       if self.memory_update_at_start:
         self.memory.store_raw_messages(unique_sources, source_id_to_messages)
         self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
@@ -226,6 +228,9 @@ class TGN(torch.nn.Module):
         raise NotImplementedError()
         source_node_embedding, destination_node_embedding, negative_node_embedding = self.run_dyrep_model(memory, source_nodes, destination_nodes, negative_nodes)
 
+
+
+    self.time_diffs = time_diffs
     if sampled_source_nodes is not None:
       return source_node_embedding, destination_node_embedding, negative_node_embedding, sampled_sources_node_embedding
     else:
