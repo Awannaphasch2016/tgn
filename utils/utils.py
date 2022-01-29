@@ -117,6 +117,12 @@ def get_conditions(args):
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "share_selected_random_weight_per_window" # all instances in each window shares same weight, but each window will be assigned weight randomly.
     compute_xf_iwf_with_sigmoid = False
+  elif args.use_ef_weight:
+    prefix = 'use_ef_weight'
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "ef_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
   else:
     assert args.max_random_weight_range is None
     prefix = "original"
@@ -452,12 +458,12 @@ def compute_nf(nodes_in_current_window, window_size):
 
   return nf
 
+
 def compute_n_window_containing_edges(edges_in_past_windows, edges_in_current_window, window_size):
 # def compute_n_window_containing_edges(edges_in_past_windows, current_uniq_edges, window_size):
   current_uniq_edges,_, current_uniq_edges_freq = get_uniq_edges_freq_in_window(edges_in_current_window)
 
   n_past_windows = edges_in_past_windows.shape[0]/window_size
-
   assert (int(n_past_windows) - n_past_windows) == 0
   n_past_windows = int(n_past_windows)
 
@@ -584,18 +590,13 @@ def compute_xf_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_a
     xf = compute_ef(x_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)
 
     # :NOTE: [source_batch, destination, negative_destination]
+
+    # only select time_diffs sources nodes
     time_diffs_batch_size = int(time_diffs.shape[0]/3)
-    time_diffs = time_diffs[:-time_diffs_batch_size]
+    time_diffs = time_diffs[time_diffs_batch_size:]
+    selected_time_diffs = time_diffs[uniq_x_idx]
 
-    uniq_edges, _, _ = get_uniq_edges_freq_in_window(x_in_current_window)
-
-    n_source_instances = int(x_in_past_windows.shape[0]/batch_size)
-    offset_idx = n_source_instances # n_sources_instances + n_destination_instances
-    source_nodes = uniq_edges[:, 0]
-    source_nodes_shift =  source_nodes - offset_idx
-
-    selected_time_diffs = time_diffs[source_nodes_shift]
-
+    assert len(selected_time_diffs) == xf.shape[0]
     time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)
 
   iwf = compute_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_as_nodes=compute_as_nodes)

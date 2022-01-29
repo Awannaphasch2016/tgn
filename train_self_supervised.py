@@ -93,6 +93,8 @@ class LinkPredictionArgs(Args):
                         help='save checkpoint of this run.')
     parser.add_argument('--use_ef_iwf_weight', action='store_true',
                         help='use ef_iwf as weight of positive edges in BCE loss')
+    parser.add_argument('--use_ef_weight', action='store_true',
+                        help='use ef as weight of positive edges in BCE loss')
     parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
                         help='use nf_iwf to rank user nodes to sample negative edges pair incident to user nodes.')
     parser.add_argument('--use_sigmoid_ef_iwf_weight', action='store_true',

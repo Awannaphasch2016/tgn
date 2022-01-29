@@ -258,6 +258,7 @@ class WindowSlidingForward(SlidingWindow):
     self.add_model()
 
   def set_params_mask(self, start_idx, end_idx ):
+    # :TODO: :BUG: raise NotImplementedError() # cant use masking because  np.unique(full_data.timestamps).shape[0] !=  full_data.timestamps.shape[0]
     full_data = self.full_data
 
     # train_mask = full_data.timestamps < full_data.timestamps[end_train_idx]
@@ -336,9 +337,11 @@ class WindowSlidingForward(SlidingWindow):
       # criterion = get_criterion()
 
 
-      pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+      # self.logger_3.info(f'')
+      # TODO: this function should be in tgn
+      model, pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid)
+      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs.numpy())
 
       self.logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
       self.logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
@@ -431,9 +434,9 @@ class WindowSlidingForward(SlidingWindow):
     self.logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
     self.logger.info('Epoch mean loss: {}'.format(np.mean(self.m_loss)))
     self.logger.info(
-        'val auc: {}'.format(val_auc))
+        'val auc: {}'.format(val_ap))
     self.logger.info(
-        'val ap: {}'.format(val_ap))
+        'val ap: {}'.format(val_auc))
 
   def evaluate(self):
     # raise NotImplementedError()
@@ -589,7 +592,8 @@ class WindowSlidingEnsemble(SlidingWindow):
 
       pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid)
+      raise NotImplementedError("time decay")
+      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay)
 
       self.logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
       self.logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
@@ -685,10 +689,11 @@ class WindowSlidingEnsemble(SlidingWindow):
 
     self.logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
     self.logger.info('Epoch mean loss: {}'.format(np.mean(self.m_loss)))
+    # NOTE: I switch val_ap and val_acc, so that it consistent with output from compute_evalaution_score
     self.logger.info(
-        'val auc: {}'.format(val_auc))
+        'val auc: {}'.format(val_ap))
     self.logger.info(
-        'val ap: {}'.format(val_ap))
+        'val ap: {}'.format(val_auc))
 
   def evaluate_ensemble(self, n_ensemble):
     pred_val_list = []
