@@ -255,4 +255,4 @@ todo.txt
 *.out
 *.err
 /link-prediction/*
-!data/reddit.csv
+!data/reddit.csv.dvc
