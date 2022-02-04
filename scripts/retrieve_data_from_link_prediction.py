@@ -776,25 +776,20 @@ class LinkPredictionCrawler(Crawler):
     else:
       self.plot_path = str(base_path / f'plot/{log_file}.png')
 
-    header_dict, loss, auc, ap, epoch, ws, times, complete_ws_len, runs = self.crawl_data()
-    # self.crawl_data_v2(nodes_and_edges_weight_log_path)
+    loss, auc, ap, epoch, ws, complete_ws_len, runs = self.crawl_data()
 
-    max_epoch = self.get_max_epoch(epoch)
     self.loss = loss
     self.auc = auc
     self.ap = ap
     self.epoch = epoch
     self.ws = ws
-    # self.mean_loss_over_run = self.compute_mean_val_over_run(loss,max_epoch)
-    # self.mean_auc_over_run = self.compute_mean_val_over_run(auc, max_epoch)
-    # self.mean_ap_over_run = self.compute_mean_val_over_run(ap, max_epoch)
 
-    self.times = times
+    self.times = None
     self.complete_ws_len = complete_ws_len
     self.runs = runs
     self.log_file = log_file
-    self.header_dict = header_dict
-    self.end_idx_of_init_window = 1 # :NOTE: this only works until init_window_size is not the same as batch_size
+    self.header_dict = None
+    self.end_idx_of_init_window = None
 
   # def compute_mean_val_over_run(self, val, max_epoch):
   def compute_mean_val_over_epoch(self, val, max_epoch):
@@ -938,6 +933,16 @@ class LinkPredictionCrawler(Crawler):
 
     # loss = np.array(loss[:complete_ws_len]).reshape(max_epoch, -1, complete_run)
     # Note:
+    self.loss_raw = loss
+    self.auc_raw = auc
+    self.ap_raw = ap
+    self.epoch_raw = epoch
+    self.times_raw = times
+    self.ws_raw = ws
+    self.runs_raw = runs
+    self.complete_run = complete_run
+    self.max_epoch = max_epoch
+
     loss = np.array(loss[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
     auc = np.array(auc[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
     ap = np.array(ap[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
@@ -948,6 +953,8 @@ class LinkPredictionCrawler(Crawler):
   def crawl_data_v2(self, log_path):
 
     pos_edges_weight = []
+    # epoch = []
+    # ws = []
 
     with open(log_path, 'r') as f:
       for i, line in enumerate(f.readlines()): # 9341 lines in total
@@ -958,21 +965,49 @@ class LinkPredictionCrawler(Crawler):
         is_epoch = True if 'epoch' in line else False
         is_ws = True if 'ws' in line else False
         is_comma_exist = True if ',' in line else False
+        is_header = True if "Namespace" in line else False
+        is_val_none = True if 'None' in line else False
+        # is_ws_exist = True if 'ws' in line else False
+        # is_epoch_exist = True if '--epoch' in line else False
 
-        if (is_comma_exist and not is_neg_edges_weight and not is_epoch and not is_ws):
+        if (is_comma_exist and not is_neg_edges_weight and not is_epoch and not is_ws and not is_header and not is_val_none):
           pos_edges_weight_val = [float(i) for i in line.strip('\n,').split(']')[0].split('[')[-1].split(',')]
           pos_edges_weight.extend(pos_edges_weight_val)
+        # if is_epoch_exist and not is_header:
+        #   epoch.append(self.get_epoch_val(line))
+        # if is_ws_exist and not is_header:
+        #   ws.append(self.get_ws_val(line))
 
-      total_window_for_1_run = 0
-      for i in range(max(self.ws)):
-        total_window_for_1_run += i
+    raise NotImplementedError
+    total_window_for_1_run = 0
+    for i in range(max(self.ws)):
+      total_window_for_1_run += i
 
-      pos_edges_weight = pos_edges_weight[:total_window_for_1_run * 200 * 5]
-      # pos_edges_weight = np.array(pos_edges_weight).reshape(5, -1, 200) # this will not work because each window iteration increase number of total window to iterate by 1.
-      pos_edges_weight = np.array(pos_edges_weight).reshape(-1,200)
-      pos_edges_weight = pos_edges_weight[-max(self.ws)+1:, :]
+    # NOTE: :total_window_for_1_run * batch_size * epoch.
+    pos_edges_weight = pos_edges_weight[:total_window_for_1_run * 200 * 5]
+    pos_edges_weight = np.array(pos_edges_weight).reshape(-1,200)
+    pos_edges_weight = pos_edges_weight[-max(self.ws)+1:, :]
 
-      return pos_edges_weight
+
+    raise NotImplementedError
+    epoch = self.epoch_raw
+    ws = self.ws_raw
+
+    max_epoch = self.get_max_epoch(epoch)
+
+    run_length_in_epoch = self.get_run_length_in_epoch(ws, epoch)
+    complete_ws_len = self.get_complete_ws_len(ws, epoch)
+    complete_run = int(len(epoch)/run_length_in_epoch)
+
+
+    pos_edges_weight = np.array(pos_edges_weight[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+    # loss = np.array(loss[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+    # auc = np.array(auc[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+    # ap = np.array(ap[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+    # epoch = np.array(epoch[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+    # times = np.array(times[:complete_ws_len]).reshape(complete_run,-1,max_epoch)
+
+    return pos_edges_weight
 
 
 class ValueCollection():
@@ -1321,7 +1356,27 @@ if __name__ == "__main__":
   # times.append(c15.get_return()[4])
   # log_files.append(log_file)
 
-  log_file = '1642416734.1726859' # original + epoch 5 + batch size 1000
+  # log_file = '1640734375.6010551'
+  # # suffix = 'epoch_wise'
+  # c44 = LinkPredictionCrawler(log_file)
+  # # c44.plot(savefig=False, use_mean_val=True)
+  # # vc.append_value(c44)
+  # pos_edges_weight = c44.crawl_data_v2(c44.nodes_and_edges_weight_log_path)
+  # col_1 = pos_edges_weight.reshape(-1)
+  # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[2])] for i in range(pos_edges_weight.shape[1] * pos_edges_weight.shape[0])]).reshape(-1)
+  # # col_name = ['weight', 'batch_idx']
+  # col_name = ['weight', 'batch_idx']
+  # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # plot_path = str(base_path / 'plot/edges_weight_1640898429-909531.png')
+  # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # plt.savefig(plot_path)
+  # plt.show()
+
+  # original + epoch 5 + batch size 1000
+  # log_file = '1642416734.1726859' # 1 run
+  log_file = '1643449846.000784'  # 5 run
   c16 = LinkPredictionCrawler(log_file)
   # c16.plot(savefig=False)
   # c16.plot(savefig=False, use_mean_val=True)
@@ -1343,12 +1398,23 @@ if __name__ == "__main__":
   # times.append(c18.get_return()[4])
   # log_files.append(log_file)
 
-  log_file = '1642599016.4373028' # original + epoch 5 + batch size 1000 + ef_iwf * 1
-  c19 = LinkPredictionCrawler(log_file)
-  # c19.plot(savefig=False)
-  # c19.plot(savefig=False, use_mean_val=True)
-  # c17.plot()
-  vc.append_value(c19)
+  # log_file = '1642599016.4373028' # original + epoch 5 + batch size 1000 + ef_iwf * 1
+  # c19 = LinkPredictionCrawler(log_file)
+  # # c19.plot(savefig=False)
+  # # c19.plot(savefig=False, use_mean_val=True)
+  # # c17.plot()
+  # vc.append_value(c19)
+  # # pos_edges_weight = c19.crawl_data_v2(c19.nodes_and_edges_weight_log_path)
+  # # col_1 = pos_edges_weight.reshape(-1)
+  # # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[1])] for i in range(pos_edges_weight.shape[0])]).reshape(-1)
+  # # col_name = ['weight', 'batch_idx']
+  # # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # # plot_path = str(base_path / 'plot/edges_weight_1640898429-909531.png')
+  # # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # # plt.savefig(plot_path)
+  # # plt.show()
 
   # log_file = '1642598633.3073912' # original + epoch 5 + batch size 1000 + ef_iwf * 50
   # c20 = LinkPredictionCrawler(log_file)
@@ -1515,21 +1581,112 @@ if __name__ == "__main__":
   # # plot_tmp(c41.loss, c41.auc, c41.ap, c41.epoch , c41.plot_path, savefig=False)
   # vc.append_value(c42)
 
-  # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay
-  log_file = '1643427785.9194715' # 10 run
-  # suffix = 'epoch_wise'
-  c43 = LinkPredictionCrawler(log_file)
-  # c42.plot(savefig=False)
-  # c41 = LinkPredictionCrawler(log_file, suffix=suffix)
-  # plot_path = str(base_path / f'plot/edges_weight_{log_file}.png')
-  # c41.plot(savefig=True, is_ensemble=True)
-  # c42.plot(savefig=True, use_mean_val=True)
-  # c43.plot(savefig=False)
-  # c43.plot(savefig=False, use_mean_val=True)
-  # c43.plot(savefig=True)
-  # c41.plot(savefig=True, is_axis_1_as_x=True)
-  # plot_tmp(c41.loss, c41.auc, c41.ap, c41.epoch , c41.plot_path, savefig=False)
-  vc.append_value(c43)
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + ef_iwf_weight
+  # log_file = '1643427785.9194715' # 10 run
+  # # suffix = 'epoch_wise'
+  # c43 = LinkPredictionCrawler(log_file)
+  # # c42.plot(savefig=False)
+  # # c41 = LinkPredictionCrawler(log_file, suffix=suffix)
+  # # plot_path = str(base_path / f'plot/edges_weight_{log_file}.png')
+  # # c41.plot(savefig=True, is_ensemble=True)
+  # # c42.plot(savefig=True, use_mean_val=True)
+  # # c43.plot(savefig=False)
+  # # c43.plot(savefig=False, use_mean_val=True)
+  # # c43.plot(savefig=True)
+  # # c41.plot(savefig=True, is_axis_1_as_x=True)
+  # # plot_tmp(c41.loss, c41.auc, c41.ap, c41.epoch , c41.plot_path, savefig=False)
+  # vc.append_value(c43)
+  # # pos_edges_weight = c43.crawl_data_v2(c43.nodes_and_edges_weight_log_path)
+  # # col_1 = pos_edges_weight.reshape(c43.complete_run,-1).mean(axis=0)
+  # # col_2 = np.arange(col_1.shape[0])
+  # # # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[2])] for i in range(pos_edges_weight.shape[1])]).reshape(-1)
+  # # col_name = ['weight', 'batch_idx']
+  # # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # # plot_path = str(base_path / 'plot/edges_weight_1640898429-909531.png')
+  # # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # # plt.savefig(plot_path)
+  # # plt.show()
+  # # exit()
+
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay
+  # log_file = '1643630158.2283676' # 10 run
+  # # log_file = '1640734375.6010551'
+  # # suffix = 'epoch_wise'
+  # c44 = LinkPredictionCrawler(log_file)
+  # # c44.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c44)
+  # # pos_edges_weight = c44.crawl_data_v2(c44.nodes_and_edges_weight_log_path)
+  # # col_1 = pos_edges_weight.reshape(-1)
+  # # col_2 = np.array([[i for _ in range(pos_edges_weight.shape[2])] for i in range(pos_edges_weight.shape[1])]).reshape(-1)
+  # # # col_name = ['weight', 'batch_idx']
+  # # col_name = ['weight', 'batch_idx']
+  # # pos_edges_weight_pd = pd.DataFrame(np.array([col_1, col_2]).T, columns=col_name)
+  # # pos_edges_weight_pd['batch_idx'] = pos_edges_weight_pd['batch_idx'].astype(int)
+  # # base_path = Path('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/')
+  # # plot_path = str(base_path / 'plot/edges_weight_1640898429-909531.png')
+  # # sns.boxplot(x="batch_idx", y="weight", data=pos_edges_weight_pd)
+  # # # plt.savefig(plot_path)
+  # # plt.show()
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + ef_weight
+  # log_file = '1643631082.8712153' # 10 run
+  # # suffix = 'epoch_wise'
+  # c45 = LinkPredictionCrawler(log_file)
+  # # c45.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c45)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + ef_weight
+  # log_file = '1643631552.957832' # 1 run
+  # # suffix = 'epoch_wise'
+  # c46 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c46)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + ef_weight + decay per day unit
+  # log_file = '1643638551.9833746' # 1 run
+  # # suffix = 'epoch_wise'
+  # c47 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c47)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + decay per day unit
+  # log_file = '1643639517.3717241' # 1 run
+  # # suffix = 'epoch_wise'
+  # c47 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c47)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + decay per day unit + time_decay not normalized
+  # # log_file = '1643827337.9428403' # 1 run
+  # log_file = '1643827646.443349' # 5 run
+  # # suffix = 'epoch_wise'
+  # c48 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c48)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + decay per hour unit + time_decay not normalized
+  # log_file = '1643847864.361433' # 1 run
+  # # suffix = 'epoch_wise'
+  # c49 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c49)
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + decay per mins unit + time_decay not normalized
+  # log_file = '1643848253.9848332' # 1 run
+  # # suffix = 'epoch_wise'
+  # c50 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c50)
+
+
+  # # reddit_10000 + forward + ws_multiplier = 1 + batch_size = 1000 + epoch= 5 + time_decay + decay per hours unit + time_decay not normalized + ef_iwf
+  # log_file = '1643849250.0097542' # 1 run
+  # c51 = LinkPredictionCrawler(log_file)
+  # # c46.plot(savefig=False, use_mean_val=True)
+  # vc.append_value(c51)
 
 
   # list_ = []

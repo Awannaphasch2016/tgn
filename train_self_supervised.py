@@ -114,8 +114,12 @@ class LinkPredictionArgs(Args):
     parser.add_argument('--ws_multiplier', type=int, default=1, help='value of window_size is a multiple of batch_size')
     parser.add_argument('--ws_framework', type=str, default='forward', help='options of window sliding framework')
     parser.add_argument('--edge_weight_multiplier', type=float, default=1, help='edge_weight_multiplier is used to multiply ef value.')
-    parser.add_argument('--use_time_decay', action='store_true',
-                        help='apply time decay to xf_iwf.')
+    parser.add_argument('--use_time_decay', action='store_true', help='apply time decay to xf_iwf.')
+    parser.add_argument('--use_time_decay_multiplier', action='store_true', help='apply time decay to unweighted edges.')
+    # parser.add_argument('--keep_last_n_window_as_window_slides', action='store_true', help='only keep last window of sliding window as window slides.')
+    parser.add_argument('--keep_last_n_window_as_window_slides', type=int, default=None, help='only keep last n window of sliding window as window slides.')
+    parser.add_argument('--window_stride_multiplier', type=int, default=1, help='window_stride_multiplier * window_size == window_stride')
+
     return parser
 
 class LinkPredictionDataTransformedCollection(DataTransformedCollection):
@@ -128,6 +132,12 @@ class TrainLinkPrediction(Train):
     # model_save_path
     MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
     self.MODEL_SAVE_PATH = MODEL_SAVE_PATH
+
+  def set_loggers_class(self, l_1, l_2):
+    self.l_1 = l_1
+    self.l_2 = l_2
+    self.set_loggers(l_1.logger, l_2.logger)
+
 
   def set_loggers(self, logger, logger_2):
     self.logger = logger
@@ -190,7 +200,7 @@ class TrainLinkPrediction(Train):
       check_point.run_idx = i
       results_path = "results/{}_{}.pkl".format(args.prefix, i) if i > 0 else "results/{}.pkl".format(args.prefix)
       Path("results/").mkdir(parents=True, exist_ok=True)
-      logger.info('run = {}'.format(i))
+      self.logger.info('run = {}'.format(i))
 
       if args.ws_framework == "forward":
         sliding_window = WindowSlidingForward
@@ -200,10 +210,15 @@ class TrainLinkPrediction(Train):
         raise NotImplementedError()
 
       sliding_window = sliding_window(args)
+      sliding_window.set_run_idx(i)
       sliding_window.get_conditions()
+      sliding_window.set_sliding_window_params(args.keep_last_n_window_as_window_slides)
       # sliding_window.add_dataset(full_data)
       sliding_window.add_data(link_prediction_data_transformed_collection)
-      sliding_window.add_loggers(logger, logger_2)
+      # sliding_window.add_weight_observer()
+      sliding_window.add_observers()
+      sliding_window.add_loggers_class(l_1, l_2)
+      # sliding_window.add_loggers(logger, logger_2)
       sliding_window.add_checkpoints(check_point)
       sliding_window.add_hardware_params(device)
       # sliding_window.set_model(TGN, neighbor_finder=None, node_features=node_features,
@@ -231,6 +246,21 @@ class TrainLinkPrediction(Train):
       sliding_window.pre_evaluation()
       sliding_window.evaluate()
 
+class Logger:
+  def set_logger_params(self, formatter, logger_name, log_time, log_relative_path, log_file_name, log_level):
+    self.formatter =  formatter
+    self.logger_name =  logger_name
+    self.log_file_name = log_file_name
+    self.log_level = log_level
+    self.log_time = log_time
+    self.log_relative_path = log_relative_path
+
+  def set_relative_path(self, relative_path):
+    self.relative_path = relative_path
+
+  def setup_logger(self):
+    self.logger = setup_logger(self.formatter, self.logger_name, self.log_file_name, level=self.log_level)
+
 if __name__ == "__main__":
 
   link_prediction_args = LinkPredictionArgs('TGN self-supervised training')
@@ -239,26 +269,36 @@ if __name__ == "__main__":
   # set up logger
   logging.basicConfig(level=logging.INFO)
 
+  l_1  = Logger()
   logger_name = "first_logger"
   log_time = str(time.time())
-  log_file_name = 'log/{}.log'.format(log_time)
+  log_relative_path = 'log/'
+  log_file_name = str(Path(log_relative_path) / '{}.log'.format(log_time))
   log_level = logging.DEBUG
   formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-  logger = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+  l_1.set_logger_params(formatter, logger_name, log_time, log_relative_path, log_file_name, log_level)
+  l_1.setup_logger()
+  # logger = setup_logger(formatter, logger_name, log_file_name, level=log_level)
 
+  l_2  = Logger()
   logger_name = "second_logger"
-  log_file_name = 'log/nodes_and_edges_weight/{}.log'.format(log_time)
+  log_relative_path = 'log/nodes_and_edges_weight/'
+  # log_file_name = 'log/nodes_and_edges_weight/{}.log'.format(log_time)
+  log_file_name = str(Path(log_relative_path) / '{}.log'.format(log_time))
   log_level = logging.DEBUG
   formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-  logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+  l_2.set_logger_params(formatter, logger_name, log_time, log_relative_path, log_file_name, log_level)
+  l_2.setup_logger()
+  # logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
 
-  logger.info(args)
-  logger_2.info(args)
+  l_1.logger.info(args)
+  l_2.logger.info(args)
 
   # Train link prediction
   train_link_prediction = TrainLinkPrediction(args)
   train_link_prediction.set_random_seed()
   train_link_prediction.set_model_save_path()
-  train_link_prediction.set_loggers(logger, logger_2)
+  # train_link_prediction.set_loggers(logger, logger_2)
+  train_link_prediction.set_loggers_class(l_1, l_2)
   train_link_prediction.run_model()

@@ -123,6 +123,12 @@ def get_conditions(args):
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = False
+  elif args.use_time_decay_multiplier:
+    prefix = 'use_time_decay_with_unweighted_edge'
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "apply_time_decay_to_non_weighted_edges"
+    compute_xf_iwf_with_sigmoid = False
   else:
     assert args.max_random_weight_range is None
     prefix = "original"
@@ -438,7 +444,8 @@ def get_end_idx(current_window_idx, window_size):
   return start_idx + window_size
 
 # def compute_ef(edges_in_current_window, window_size):
-def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None):
+
+def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None, return_x_value_dict=False, time_diffs=None, use_time_decay=False):
   _, _, current_uniq_edges_freq =  get_uniq_edges_freq_in_window(edges_in_current_window)
 
   # ef = current_uniq_edges_freq * 0.1
@@ -446,8 +453,18 @@ def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None
   # ef = 1/current_uniq_edges_freq * edge_weight_multiplier
   ef = current_uniq_edges_freq * edge_weight_multiplier
   # ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
+  if use_time_decay:
+    # NOTE: having time_diffs condition like this could cause hard to detect bug, but as of now. it seems to be safe for current use case.
+    ef = ef * compute_time_decay_multipler(edges_in_current_window, window_size, compute_as_nodes=False, return_x_value_dict=False, time_diffs=time_diffs)
 
-  return ef
+
+
+  if return_x_value_dict:
+    current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(edges_in_current_window, compute_as_nodes=False)
+    x_to_xf_window_dict = {tuple(i):j for i,j in zip(current_uniq_x, ef)}
+    return ef, x_to_xf_window_dict
+  else:
+    return ef
 
 
 def compute_nf(nodes_in_current_window, window_size):
@@ -455,7 +472,6 @@ def compute_nf(nodes_in_current_window, window_size):
 
   nf = current_src_uniq_nodes_freq
   # nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
-
   return nf
 
 
@@ -573,10 +589,37 @@ def get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes):
   else:
     return get_uniq_edges_freq_in_window(x_in_current_window)
 
-def compute_continuous_exponential_time_decay(time_length, decay_rate=0.10):
+def compute_continuous_exponential_time_decay(time_length, decay_rate=0.1):
 
-  convert_seconds_to_days = 1/60 * 60 * 24
-  return  (math.e ** (decay_rate * time_length))
+  convert_seconds_to_days = lambda x: x / (60 * 60 * 24)
+  convert_seconds_to_hours = lambda x: x / (60 * 60)
+  convert_seconds_to_mins = lambda x: x / (60)
+  # return  (math.e ** (decay_rate * time_length))
+  # return  (math.e ** (decay_rate * convert_seconds_to_days(time_length)))
+  return  (math.e ** (decay_rate * convert_seconds_to_hours(time_length)))
+  # return  (math.e ** (decay_rate * convert_seconds_to_mins(time_length)))
+
+def compute_time_decay_multipler(x_in_current_window, batch_size, compute_as_nodes=True, return_x_value_dict=False, time_diffs=None):
+  current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
+
+  # only select time_diffs sources nodes
+  time_diffs_batch_size = int(time_diffs.shape[0]/3)
+  time_diffs = time_diffs[time_diffs_batch_size:]
+  selected_time_diffs = time_diffs[uniq_x_idx]
+
+  # assert len(selected_time_diffs) == xf.shape[0]
+  time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)
+
+  # print(current_uniq_x, xf_iwf)
+  if compute_as_nodes:
+    x_to_time_decay_multipler_window_dict = {i:j for i,j in zip(current_uniq_x, time_decay_multiplier)}
+  else:
+    x_to_time_decay_multipler_window_dict = {tuple(i):j for i,j in zip(current_uniq_x, time_decay_multiplier)}
+
+  if return_x_value_dict:
+    return time_decay_multiplier, x_to_time_decay_multipler_window_dict
+  else:
+    return time_decay_multiplier
 
 def compute_xf_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_as_nodes=True, return_x_value_dict=False, compute_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 

@@ -145,27 +145,37 @@ class TGN(torch.nn.Module):
 
       ### Compute differences between the time the memory of a node was last updated,
       ### and the time for which we want to compute the embedding of a node
-      source_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
-        source_nodes].long()
+      source_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[source_nodes].long()
+      source_time_diffs_raw = source_time_diffs.clone()
       source_time_diffs = (source_time_diffs - self.mean_time_shift_src) / self.std_time_shift_src
+
       destination_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
         destination_nodes].long()
+      destination_time_diffs_raw = destination_time_diffs.clone()
       destination_time_diffs = (destination_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
+
       negative_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
         negative_nodes].long()
+      negative_time_diffs_raw = negative_time_diffs.clone()
       negative_time_diffs = (negative_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
 
       if sampled_source_nodes is not None:
         sampled_sources_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[
           sampled_source_nodes].long()
+        sampled_sources_time_diffs_raw = sampled_sources_time_diffs.clone()
         sampled_sources_time_diffs = (sampled_sources_time_diffs - self.mean_time_shift_src) / self.std_time_shift_src
 
       if sampled_source_nodes is not None:
         time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs, sampled_sources_time_diffs],
                              dim=0)
+        time_diffs_raw = torch.cat([source_time_diffs_raw, destination_time_diffs_raw, negative_time_diffs_raw, sampled_sources_time_diffs_raw],
+                             dim=0)
+
       else:
          time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
                                  dim=0)
+         time_diffs_raw = torch.cat([source_time_diffs_raw, destination_time_diffs_raw, negative_time_diffs_raw],
+                             dim=0)
 
     # :TODO: concatenate NF-INF to nodes features before apply node embedding. add NF-IWF column to node features.
     # Compute the embeddings using the embedding module
@@ -231,6 +241,7 @@ class TGN(torch.nn.Module):
 
 
     self.time_diffs = time_diffs
+    self.time_diffs_raw = time_diffs_raw
     if sampled_source_nodes is not None:
       return source_node_embedding, destination_node_embedding, negative_node_embedding, sampled_sources_node_embedding
     else:

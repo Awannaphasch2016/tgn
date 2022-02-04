@@ -5,7 +5,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, compute_ef,compute_time_decay_multipler
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -372,15 +372,44 @@ def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, en
   elif weighted_loss_method == "share_selected_random_weight_per_window":
     # rand_weight = np.array([random.randint(0,500) for _ in range(batch_size)]) # range =[0,500]
     pos_edges_weight = get_share_selected_random_weight_per_window(batch_size, max_weight, batch_idx, share_selected_random_weight_per_window_dict)
-
-  if weighted_loss_method == "ef_as_pos_edges_weight":
+  elif weighted_loss_method == "ef_as_pos_edges_weight":
     pos_edges_weight = get_ef(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict,compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
+  elif weighted_loss_method == "apply_time_decay_to_non_weighted_edges":
+    assert time_diffs is not None
+    pos_edges_weight = get_unweighted_edges_with_time_decay(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, edge_weight_multiplier=edge_weight_multiplier, time_diffs=time_diffs)
   elif weighted_loss_method == "no_weight":
     pass
   else:
     raise NotImplementedError()
 
   return pos_edges_weight, neg_edges_weight
+
+def get_unweighted_edges_with_time_decay(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, time_decay_multipler_dict, edge_weight_multiplier=None, time_diffs=None):
+
+  edges_ = np.vstack((data.sources, data.destinations)).T
+  start_past_window_idx = start_train_idx
+  end_past_window_idx = end_train_hard_negative_idx
+  edges_in_past_windows = edges_[:start_past_window_idx]
+  edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
+  pos_edges_weight = []
+
+  time_decay_multipler_window_dict = add_only_new_values_of_new_window_to_dict(compute_time_decay_multipler, edges_in_current_window, batch_size, return_x_value_dict=True, compute_as_nodes=False, time_diffs=time_diffs)(
+    batch_idx, time_decay_multipler_dict, 1)
+
+
+  # if batch_idx not in ef_iwf_window_dict:
+  #   # if batch_idx > 1 and use_ef_iwf_weight:
+  #   # if batch_idx >= 0:
+  #   ef_iwf, edges_to_ef_iwf_current_window_dict = compute_xf_iwf(edges_in_past_windows, edges_in_current_window , batch_size, compute_as_nodes=False, return_x_value_dict=True, compute_with_sigmoid=compute_xf_iwf_with_sigmoid)
+  #   ef_iwf_window_dict[batch_idx] = edges_to_ef_iwf_current_window_dict
+
+  for ii in edges_in_current_window:
+    pos_edges_weight.append(time_decay_multipler_dict[batch_idx][tuple(ii)])
+  assert len(pos_edges_weight) == edges_in_current_window.shape[0]
+
+  pos_edges_weight = torch.FloatTensor(pos_edges_weight)
+
+  return pos_edges_weight
 
 def get_ef(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_window_dict, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
   edges_ = np.vstack((data.sources, data.destinations)).T
@@ -390,8 +419,8 @@ def get_ef(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative
   edges_in_current_window = edges_[start_past_window_idx:end_past_window_idx]
   pos_edges_weight = []
 
-  ef_window_dict = add_only_new_values_of_new_window_to_dict(compute_ef, edges_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)(
-    batch_idx, ef_iwf_window_dict, 1)
+  ef_window_dict = add_only_new_values_of_new_window_to_dict(compute_ef, edges_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier, return_x_value_dict=True, time_diffs=time_diffs, use_time_decay=use_time_decay)(
+    batch_idx, ef_window_dict, 1)
 
 
   # if batch_idx not in ef_iwf_window_dict:
@@ -438,7 +467,8 @@ def get_ef_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
 def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg_edges_weight,batch_idx, criterion, loss, weighted_loss_method):
 
   # if batch_idx > 1 and use_ef_iwf_weight:
-  if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
+  # if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
+  if weighted_loss_method in ["ef_iwf_as_pos_edges_weight",  "ef_as_pos_edges_weight",  "apply_time_decay_to_non_weighted_edges"]:
     assert neg_edges_weight is None
     assert pos_edges_weight is not None
     if batch_idx >= 0:
@@ -454,8 +484,16 @@ def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg
     assert neg_edges_weight is None
     assert pos_edges_weight is not None
     loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
-  elif weighted_loss_method == "ef_as_pos_edges_weight":
-    raise NotImplementedError()
+  # elif weighted_loss_method == "ef_as_pos_edges_weight":
+  #   # raise NotImplementedError()
+  #   assert neg_edges_weight is None
+  #   assert pos_edges_weight is not None
+  #   loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
+  # elif weighted_loss_method == "apply_time_decay_to_non_weighted_edges":
+  #   # raise NotImplementedError()
+  #   assert neg_edges_weight is None
+  #   assert pos_edges_weight is not None
+  #   loss += criterion(weight=pos_edges_weight)(pos_prob.squeeze(), pos_label)+criterion()(neg_prob.squeeze(), neg_label)
   elif weighted_loss_method == "no_weight":
     assert neg_edges_weight is None
     assert pos_edges_weight is None
