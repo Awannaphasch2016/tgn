@@ -91,8 +91,8 @@ class LinkPredictionArgs(Args):
     parser.add_argument('--custom_prefix', type=str, default=None, help='Prefix to name the checkpoints')
     parser.add_argument('--save_checkpoint', action='store_true',
                         help='save checkpoint of this run.')
-    parser.add_argument('--use_ef_iwf_weight', action='store_true',
-                        help='use ef_iwf as weight of positive edges in BCE loss')
+    parser.add_argument('--use_ef_iwf_weight', action='store_true', help='use ef_iwf as weight of positive edges in BCE loss')
+    parser.add_argument('--use_nf_iwf_weight', action='store_true', help='use nf_iwf as weight of positive edges in BCE loss')
     parser.add_argument('--use_ef_weight', action='store_true',
                         help='use ef as weight of positive edges in BCE loss')
     parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
@@ -119,6 +119,10 @@ class LinkPredictionArgs(Args):
     # parser.add_argument('--keep_last_n_window_as_window_slides', action='store_true', help='only keep last window of sliding window as window slides.')
     parser.add_argument('--keep_last_n_window_as_window_slides', type=int, default=None, help='only keep last n window of sliding window as window slides.')
     parser.add_argument('--window_stride_multiplier', type=int, default=1, help='window_stride_multiplier * window_size == window_stride')
+    # parser.add_argument('--last_instances_idx', type=int, default=None, help='index of last instances to be run')
+    # parser.add_argument('--first_instances_idx', type=int, default=None, help='index of first instances to be run')
+    parser.add_argument('--first_batch_idx', type=int, default=None, help='first batch idx to be run')
+    parser.add_argument('--last_batch_idx', type=int, default=None, help='last batch idx to be run')
 
     return parser
 

@@ -43,19 +43,37 @@ def split_a_window_into_batches(window_begin_ind, window_end_ind, batch_size):
     end_batch_inds.append(((i+1) * batch_size) + min_ind)
   return end_batch_inds
 
-def right_split_ind_by_window(n_window_to_have_on_right, n_instances, window_size):
-  assert n_instances/window_size == int(n_instances/window_size)
+def right_split_ind(n_x_to_have_on_right, n_instances, x_size):
+  assert n_instances/x_size == int(n_instances/x_size)
 
-  n_windows = int(n_instances/window_size)
-  begin_inds = [i * window_size for i in range(n_windows)]
-  end_inds = [i + window_size for i in begin_inds]
+  n_windows = int(n_instances/x_size)
+  begin_inds = [i * x_size for i in range(n_windows)]
+  end_inds = [i + x_size for i in begin_inds]
 
   begin_ind = 0
-  ind_to_split = begin_inds[-n_window_to_have_on_right]
-  end_ind = end_inds[-n_window_to_have_on_right]
+  ind_to_split = begin_inds[-n_x_to_have_on_right]
+  end_ind = end_inds[-n_x_to_have_on_right]
 
   return begin_ind, ind_to_split, end_ind
+
+def right_split_ind_by_batch(n_batch_to_have_on_right, n_instances, batch_size):
+  return right_split_ind(n_batch_to_have_on_right, n_instances, batch_size)
   # return (begin_inds[:-1], end_inds[:-1]), (begin_inds[-1], end_inds[-1])
+
+def right_split_ind_by_window(n_window_to_have_on_right, n_instances, window_size):
+  return right_split_ind(n_window_to_have_on_right, n_instances, window_size)
+  # assert n_instances/window_size == int(n_instances/window_size)
+
+  # n_windows = int(n_instances/window_size)
+  # begin_inds = [i * window_size for i in range(n_windows)]
+  # end_inds = [i + window_size for i in begin_inds]
+
+  # begin_ind = 0
+  # ind_to_split = begin_inds[-n_window_to_have_on_right]
+  # end_ind = end_inds[-n_window_to_have_on_right]
+
+  # return begin_ind, ind_to_split, end_ind
+  # # return (begin_inds[:-1], end_inds[:-1]), (begin_inds[-1], end_inds[-1])
 
 def convert_ensemble_idx_to_window_idx(ensemble_idx, window_size):
   return (ensemble_idx * window_size) + window_size
@@ -88,6 +106,13 @@ def get_conditions(args):
     neg_sample_method = "random"
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_iwf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
+  elif args.use_nf_iwf_weight:
+    assert args.max_random_weight_range is None
+    prefix = 'use_nf_iwf_weight'
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "nf_iwf_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = False
   elif args.use_sigmoid_ef_iwf_weight:
     raise NotImplementedError("I don't expect this to be used anymore.")
@@ -323,7 +348,7 @@ def convert_to_onehot(labels, n_uniq_labels):
   one_hot = enc.transform(labels).toarray()
   return torch.Tensor(one_hot)
 
-def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, sampled_nodes=None):
+def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, sampled_nodes=None, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 
   start_past_window_idx = start_train_idx
   end_past_window_idx = end_train_hard_negative_idx
@@ -331,8 +356,7 @@ def get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_nega
   nodes_in_current_window = data.sources[start_past_window_idx:end_past_window_idx]
   src_nodes_weight = []
 
-  raise NotImplementedError()
-  nf_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True)(
+  nf_iwf_window_dict = add_only_new_values_of_new_window_to_dict(compute_xf_iwf, nodes_in_past_windows, nodes_in_current_window , batch_size, compute_as_nodes=True, return_x_value_dict=True, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)(
     batch_idx, nf_iwf_window_dict, 1)
 
   # if batch_idx not in nf_iwf_window_dict:
@@ -446,6 +470,7 @@ def get_end_idx(current_window_idx, window_size):
 # def compute_ef(edges_in_current_window, window_size):
 
 def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None, return_x_value_dict=False, time_diffs=None, use_time_decay=False):
+  compute_as_nodes = False
   _, _, current_uniq_edges_freq =  get_uniq_edges_freq_in_window(edges_in_current_window)
 
   # ef = current_uniq_edges_freq * 0.1
@@ -455,24 +480,38 @@ def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None
   # ef = current_uniq_edges_freq/edges_in_current_window.shape[0]
   if use_time_decay:
     # NOTE: having time_diffs condition like this could cause hard to detect bug, but as of now. it seems to be safe for current use case.
-    ef = ef * compute_time_decay_multipler(edges_in_current_window, window_size, compute_as_nodes=False, return_x_value_dict=False, time_diffs=time_diffs)
+    ef = ef * compute_time_decay_multipler(edges_in_current_window, window_size, compute_as_nodes=compute_as_nodes, return_x_value_dict=False, time_diffs=time_diffs)
 
 
 
   if return_x_value_dict:
-    current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(edges_in_current_window, compute_as_nodes=False)
+    current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(edges_in_current_window, compute_as_nodes=compute_as_nodes)
     x_to_xf_window_dict = {tuple(i):j for i,j in zip(current_uniq_x, ef)}
     return ef, x_to_xf_window_dict
   else:
     return ef
 
 
-def compute_nf(nodes_in_current_window, window_size):
+def compute_nf(nodes_in_current_window, window_size, edge_weight_multiplier=None, return_x_value_dict=False, time_diffs=None, use_time_decay=False):
+
+  compute_as_nodes = True
+
   current_src_uniq_nodes, _, current_src_uniq_nodes_freq =  get_uniq_nodes_freq_in_window(nodes_in_current_window)
 
   nf = current_src_uniq_nodes_freq
-  # nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
-  return nf
+
+  if use_time_decay:
+    nf = nf * compute_time_decay_multipler(nodes_in_current_window, window_size, compute_as_nodes=compute_as_nodes, return_x_value_dict=False, time_diffs=time_diffs)
+
+  # # nf = current_src_uniq_nodes_freq/nodes_in_current_window.shape[0]
+  # return nf
+
+  if return_x_value_dict:
+    current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(nodes_in_current_window, compute_as_nodes=compute_as_nodes)
+    x_to_xf_window_dict = {i:j for i,j in zip(current_uniq_x, nf)}
+    return nf, x_to_xf_window_dict
+  else:
+    return nf
 
 
 def compute_n_window_containing_edges(edges_in_past_windows, edges_in_current_window, window_size):
@@ -599,13 +638,34 @@ def compute_continuous_exponential_time_decay(time_length, decay_rate=0.1):
   return  (math.e ** (decay_rate * convert_seconds_to_hours(time_length)))
   # return  (math.e ** (decay_rate * convert_seconds_to_mins(time_length)))
 
+def get_source_idx_from_time_diffs(time_diffs, x_in_current_window, compute_as_nodes):
+  current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
+  # only select time_diffs sources nodes
+  time_diffs_batch_size = int(time_diffs.shape[0]/3)
+  # time_diffs = time_diffs[time_diffs_batch_size:]
+  time_diffs = time_diffs[:time_diffs_batch_size]
+  selected_time_diffs = time_diffs[uniq_x_idx]
+  return selected_time_diffs
+
+def get_destination_idx_from_time_diffs(time_diffs):
+  raise NotImplementedError
+  # only select time_diffs sources nodes
+  time_diffs_batch_size = int(time_diffs.shape[0]/3)
+  # time_diffs = time_diffs[time_diffs_batch_size:]
+  time_diffs = time_diffs[time_diffs_batch_size:time_diffs_batch_size*2]
+  selected_time_diffs = time_diffs[uniq_x_idx]
+  return selected_time_diffs
+
 def compute_time_decay_multipler(x_in_current_window, batch_size, compute_as_nodes=True, return_x_value_dict=False, time_diffs=None):
   current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
 
-  # only select time_diffs sources nodes
-  time_diffs_batch_size = int(time_diffs.shape[0]/3)
-  time_diffs = time_diffs[time_diffs_batch_size:]
-  selected_time_diffs = time_diffs[uniq_x_idx]
+  # # only select time_diffs sources nodes
+  # time_diffs_batch_size = int(time_diffs.shape[0]/3)
+  # # time_diffs = time_diffs[time_diffs_batch_size:]
+  # time_diffs = time_diffs[:time_diffs_batch_size]
+  # selected_time_diffs = time_diffs[uniq_x_idx]
+
+  selected_time_diffs = get_source_idx_from_time_diffs(time_diffs, x_in_current_window, compute_as_nodes)
 
   # assert len(selected_time_diffs) == xf.shape[0]
   time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)
@@ -626,18 +686,29 @@ def compute_xf_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_a
   current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
 
   if compute_as_nodes:
-    xf = compute_nf(x_in_current_window, batch_size)
-    raise NotImplementedError()
-    time_decay_multiplier = compute_continuous_exponential_time_decay(time_diffs)
+    xf = compute_nf(x_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)
+
+    # time_diffs_batch_size = int(time_diffs.shape[0]/3)
+    # time_diffs = time_diffs[:time_diffs_batch_size]
+    # selected_time_diffs = time_diffs[uniq_x_idx]
+
+    selected_time_diffs = get_source_idx_from_time_diffs(time_diffs, x_in_current_window, compute_as_nodes)
+
+    assert len(selected_time_diffs) == xf.shape[0]
+    time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)
+
   else:
     xf = compute_ef(x_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)
 
     # :NOTE: [source_batch, destination, negative_destination]
 
-    # only select time_diffs sources nodes
-    time_diffs_batch_size = int(time_diffs.shape[0]/3)
-    time_diffs = time_diffs[time_diffs_batch_size:]
-    selected_time_diffs = time_diffs[uniq_x_idx]
+    # # only select time_diffs sources nodes
+    # time_diffs_batch_size = int(time_diffs.shape[0]/3)
+    # # time_diffs = time_diffs[time_diffs_batch_size:]
+    # time_diffs = time_diffs[:time_diffs_batch_size]
+    # selected_time_diffs = time_diffs[uniq_x_idx]
+
+    selected_time_diffs = get_source_idx_from_time_diffs(time_diffs, x_in_current_window, compute_as_nodes)
 
     assert len(selected_time_diffs) == xf.shape[0]
     time_decay_multiplier = compute_continuous_exponential_time_decay(selected_time_diffs)

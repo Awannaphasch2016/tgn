@@ -359,7 +359,11 @@ def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, en
 
   if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
     pos_edges_weight = get_ef_iwf(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict,compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
+  elif weighted_loss_method == "nf_iwf_as_pos_edges_weight":
+    assert not compute_xf_iwf_with_sigmoid
+    pos_edges_weight = get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
   elif weighted_loss_method == "nf_iwf_as_pos_and_neg_edge_weight":
+    raise NotImplementedError() # not sure what this is for.
     # use nodes as edges weight
     pos_edges_weight = get_nf_iwf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict)
     # get neg_edges_weight from sampled_nodes.
@@ -468,7 +472,7 @@ def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg
 
   # if batch_idx > 1 and use_ef_iwf_weight:
   # if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
-  if weighted_loss_method in ["ef_iwf_as_pos_edges_weight",  "ef_as_pos_edges_weight",  "apply_time_decay_to_non_weighted_edges"]:
+  if weighted_loss_method in ["ef_iwf_as_pos_edges_weight",  "ef_as_pos_edges_weight",  "apply_time_decay_to_non_weighted_edges", "nf_iwf_as_pos_edges_weight"]:
     assert neg_edges_weight is None
     assert pos_edges_weight is not None
     if batch_idx >= 0:

@@ -7,7 +7,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, EF_IWF, NF_IWF, SHARE_SELECTED_RANDOM_WEIGHT, get_conditions, apply_off_set_ind, convert_n_instances_to_ind, convert_ind_to_n_instances, right_split_ind_by_window, convert_window_idx_to_batch_idx, convert_window_idx_to_batch_idx, split_a_window_into_batches, convert_prob_list_to_binary_list, get_conditions_node_classification, label_new_unique_nodes_with_budget, pred_prob_to_pred_labels,get_batch_idx_relative_to_window_idx, get_encoder, convert_to_onehot,get_label_distribution, get_unique_nodes_labels
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, EF_IWF, NF_IWF, SHARE_SELECTED_RANDOM_WEIGHT, get_conditions, apply_off_set_ind, convert_n_instances_to_ind, convert_ind_to_n_instances, right_split_ind_by_window, convert_window_idx_to_batch_idx, convert_window_idx_to_batch_idx, split_a_window_into_batches, convert_prob_list_to_binary_list, get_conditions_node_classification, label_new_unique_nodes_with_budget, pred_prob_to_pred_labels,get_batch_idx_relative_to_window_idx, get_encoder, convert_to_onehot,get_label_distribution, get_unique_nodes_labels, right_split_ind_by_batch
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -195,8 +195,25 @@ class SlidingWindow:
     # return self.get_init_windows_size(window_size, keep_last_n_window_as_window_slides)
     return window_size * window_stride_multiplier
   
-  def get_sliding_window_params(self, num_instance, batch_size, ws_multiplier,keep_last_n_window_as_window_slides, window_stride_multiplier):
+  def get_sliding_window_params(self, num_instance, batch_size, ws_multiplier,keep_last_n_window_as_window_slides, window_stride_multiplier, last_batch_idx=None, first_batch_idx=None):
 
+    ### Batch params
+
+    # raise NotImplementedError
+    # first_batch = first_batch_idx * batch_size
+    # last_batch = last_batch_idx * batch_size
+
+    # begin_ind, idx_to_split, _ = right_split_ind_by_window(1, self.full_data.data_size, self.window_size)
+    begin_ind, idx_to_split, _ = right_split_ind_by_batch(1, self.full_data.data_size, self.args.bs)
+
+    # self.window_begin_inds, self.window_end_inds = get_all_ensemble_training_data_inds(begin_ind, idx_to_split-1, self.window_size, fix_begin_ind=True)
+
+    batch_inds = split_a_window_into_batches(begin_ind, idx_to_split- 1, self.args.bs)
+    batch_begin_inds = batch_inds[:-1]
+    batch_end_inds = batch_inds[1:]
+
+    ### Window params
+  
     # init_train_data = BATCH_SIZE
     # init_train_data = math.ceil(num_instance * 0.001)
     # init_train_data = batch_size * max(1,math.floor(init_train_data/num_instances_shift))
@@ -210,6 +227,8 @@ class SlidingWindow:
     num_instances_shift = self.get_window_slide_stride(window_size, window_stride_multiplier)
 
     # total_num_ws =  math.floor(num_instance/num_instances_shift) # 6
+    # total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
+    
     total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
     # init_num_ws = math.floor(init_train_data/num_instances_shift) #6
     assert init_train_data/num_instances_shift == int(init_train_data/num_instances_shift)
@@ -217,7 +236,7 @@ class SlidingWindow:
     left_num_ws = total_num_ws - init_num_ws 
     # left_num_ws = total_num_ws - init_num_ws + 1 # NOTE: this may cause error.
 
-    return window_size, num_init_data, num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws
+    return window_size, num_init_data, num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws, batch_inds, batch_begin_inds, batch_end_inds 
 
   def set_sliding_window_framework(self, ws_framework):
     if ws_framework == "forward":
@@ -313,17 +332,11 @@ class WindowSlidingForward(SlidingWindow):
     self.decoder, self.optimizer, self.criterion = self.set_decoder()
     # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
     self.model.to(self.device)
-    begin_ind, idx_to_split, _ = right_split_ind_by_window(1, self.full_data.data_size, self.window_size)
 
-    # self.window_begin_inds, self.window_end_inds = get_all_ensemble_training_data_inds(begin_ind, idx_to_split-1, self.window_size, fix_begin_ind=True)
-
-    self.batch_inds = split_a_window_into_batches(begin_ind, idx_to_split- 1, self.args.bs)
-    self.batch_begin_inds = self.batch_inds[:-1]
-    self.batch_end_inds = self.batch_inds[1:]
 
   def pre_evaluation(self):
 
-    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.keep_last_n_window_as_window_slides, self.args.window_stride_multiplier)
+    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws, self.batch_inds, self.batch_begin_inds, self.batch_end_inds  = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.keep_last_n_window_as_window_slides, self.args.window_stride_multiplier)
 
     self.add_model()
 
@@ -412,7 +425,7 @@ class WindowSlidingForward(SlidingWindow):
       # TODO: this function should be in tgn
       model, pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs_raw.numpy())
+      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs_raw.cpu().data.numpy())
 
       self.run_observer.setdefault('run_idx', []).append(self.run_idx)
       self.ws_observer.setdefault('ws_idx', []).append(self.ws_idx)
@@ -621,11 +634,24 @@ class WindowSlidingForward(SlidingWindow):
       self.evaluate_ws(ws, self.get_idx_pair_of_current_concat_windows(self.init_train_data, self.num_instances_shift), self.args.bs)
 
 
+  # def get_num_batch_idx_pair(self, window_idx_pair,batch_size, keep_last_n_window_as_window_slides, first_batch_idx=None, last_batch_idx=None):
   def get_num_batch_idx_pair(self, window_idx_pair,batch_size, keep_last_n_window_as_window_slides):
+
     num_batch_begin = 0
-    if keep_last_n_window_as_window_slides is not None:
-      num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
     num_batch_end = math.floor((window_idx_pair[1])/batch_size)
+
+    if keep_last_n_window_as_window_slides is not None:
+      # num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
+      num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
+
+    # if first_batch_idx is not None:
+    #   raise NotImplementedError
+    #   num_batch_begin = min(num_batch_begin, first_batch_idx)
+
+    # if last_batch_idx is not None:
+    #   raise NotImplementedError
+    #   num_batch_end = min(num_batch_end, last_batch_idx)
+    
     return num_batch_begin, num_batch_end
 
   def evaluate_ws(self, ws, idx_pair, batch_size):
