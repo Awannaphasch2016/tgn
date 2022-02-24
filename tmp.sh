@@ -26,7 +26,9 @@ set -e
 
 # python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 200  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1
 
-python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 200  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5 --fix_begin_data_ind_of_models_in_ensemble
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 200  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5 --fix_begin_data_ind_of_models_in_ensemble
+
+python train_self_supervised.py -d reddit_100000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5 --fix_begin_data_ind_of_models_in_ensemble
 
 # python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --keep_last_n_window_as_window_slides 1 --window_stride_multiplier 1 --use_nf_iwf_weight
 
