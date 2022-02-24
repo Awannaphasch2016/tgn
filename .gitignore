@@ -256,3 +256,5 @@ todo.txt
 *.err
 /link-prediction/*
 !data/reddit.csv.dvc
+*.csv
+tmp2.py

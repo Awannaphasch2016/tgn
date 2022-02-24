@@ -7,7 +7,7 @@ import time
 import pickle
 import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
-from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, EF_IWF, NF_IWF, SHARE_SELECTED_RANDOM_WEIGHT, get_conditions, apply_off_set_ind, convert_n_instances_to_ind, convert_ind_to_n_instances, right_split_ind_by_window, convert_window_idx_to_batch_idx, convert_window_idx_to_batch_idx, split_a_window_into_batches, convert_prob_list_to_binary_list, get_conditions_node_classification, label_new_unique_nodes_with_budget, pred_prob_to_pred_labels,get_batch_idx_relative_to_window_idx, get_encoder, convert_to_onehot,get_label_distribution, get_unique_nodes_labels, right_split_ind_by_batch
+from utils.utils import EarlyStopMonitor, get_neighbor_finder, compute_xf_iwf, compute_nf,  get_nf_iwf, add_only_new_values_of_new_window_to_dict, compute_share_selected_random_weight_per_window, get_share_selected_random_weight_per_window, EF_IWF, NF_IWF, SHARE_SELECTED_RANDOM_WEIGHT, get_conditions, apply_off_set_ind, convert_n_instances_to_ind, convert_ind_to_n_instances, right_split_ind_by_window, convert_window_idx_to_batch_idx, convert_window_idx_to_batch_idx, split_a_window_into_batches, convert_prob_list_to_binary_list, get_conditions_node_classification, label_new_unique_nodes_with_budget, pred_prob_to_pred_labels,get_batch_idx_relative_to_window_idx, get_encoder, convert_to_onehot,get_label_distribution, get_unique_nodes_labels, right_split_ind_by_batch, NF, EF
 from utils.sampler import RandEdgeSampler, EdgeSampler_NF_IWF
 from utils.data_processing import Data
 from tqdm import tqdm
@@ -86,7 +86,7 @@ class SlidingWindow:
       "use_source_embedding_in_message":use_source_embedding_in_message,
       "dyrep":dyrep
     }
-    
+
     self.ModelClass = ModelClass
 
   def save_checkpoint_per_ws(self):
@@ -100,6 +100,8 @@ class SlidingWindow:
   def init_params_that_tracks_history_of_ws(self):
     self.ef_iwf_window_dict = EF_IWF()
     self.nf_iwf_window_dict = NF_IWF()
+    self.ef_window_dict = EF()
+    self.nf_window_dict = NF()
     self.share_selected_random_weight_per_window_dict = SHARE_SELECTED_RANDOM_WEIGHT()
 
   def get_conditions(self):
@@ -138,6 +140,15 @@ class SlidingWindow:
     self.add_epoch_observer()
     self.add_performance_observer()
     self.add_run_observer()
+    self.add_ensemble_observer()
+    self.add_ensemble_prediction_observer()
+
+  def add_ensemble_prediction_observer(self):
+    self.ensemble_prediction_observer = {}
+
+  def add_ensemble_observer(self):
+    self.ensemble_observer = {}
+    self.ensemble_observer_1 = {}
 
   def add_performance_observer(self):
     self.performance_observer = {}
@@ -161,14 +172,16 @@ class SlidingWindow:
     self.epoch_observer = {}
     self.epoch_observer_1 = {}
 
-  def add_loggers_class(self, l_1, l_2):
+  def add_loggers_class(self, l_1, l_2, l_3):
     self.l_1 = l_1
     self.l_2 = l_2
-    self.add_loggers(l_1.logger, l_2.logger)
+    self.l_3 = l_3
+    self.add_loggers(l_1.logger, l_2.logger, l_3.logger)
 
-  def add_loggers(self, logger, logger_2):
+  def add_loggers(self, logger, logger_2, logger_3):
     self.logger = logger
     self.logger_2 = logger_2
+    self.logger_3 = logger_3
 
   def add_model_training_params(self, n_epoch):
     self.n_epoch = n_epoch
@@ -182,26 +195,44 @@ class SlidingWindow:
     raise NotImplementedError
 
   def pre_evaluation(self):
-    raise NotImplementedError 
+    raise NotImplementedError
 
-  def get_init_windows_size(self, window_size, keep_last_n_window_as_window_slides):
-    if keep_last_n_window_as_window_slides is not None:
-      return window_size * keep_last_n_window_as_window_slides
-    else:
-      return window_size
+  # def get_init_windows_size(self, window_size, keep_last_n_window_as_window_slides, window_idx_to_start_with=None):
+  def get_init_windows_size(self, window_size, window_idx_to_start_with=None):
+  # def get_init_windows_size(self, window_size):
+    init_windows_size = window_size
+
+    if window_idx_to_start_with is not None:
+      assert window_idx_to_start_with * window_size >= init_windows_size
+      init_windows_size = window_idx_to_start_with * window_size
+    # else:
+    #   if keep_last_n_window_as_window_slides is not None:
+    #     init_windows_size = window_size * keep_last_n_window_as_window_slides
+    #   # else:
+    #   #   init_windows_size = window_size
+
+
+    return init_windows_size
 
   # def get_window_slide_stride(self, window_size, keep_last_n_window_as_window_slides ):
-  def get_window_slide_stride(self, window_size, window_stride_multiplier):
+  def get_window_slide_stride(self, window_size, window_stride_multiplier=1):
     # return self.get_init_windows_size(window_size, keep_last_n_window_as_window_slides)
     return window_size * window_stride_multiplier
-  
-  def get_sliding_window_params(self, num_instance, batch_size, ws_multiplier,keep_last_n_window_as_window_slides, window_stride_multiplier, last_batch_idx=None, first_batch_idx=None):
+
+  def get_sliding_window_params(self, num_instance, batch_size, ws_multiplier,keep_last_n_window_as_window_slides, window_stride_multiplier, window_idx_to_start_with=None):
 
     ### Batch params
 
     # raise NotImplementedError
-    # first_batch = first_batch_idx * batch_size
-    # last_batch = last_batch_idx * batch_size
+    # if first_batch_idx is not None:
+    #   first_batch = (first_batch_idx + 1) * batch_size
+    #   assert first_batch < num_instance
+    #   num_instance = num_instance - first_batch
+
+    # if last_batch_idx is not None:
+    #   last_batch = (last_batch_idx + 1) * batch_size
+    #   assert last_batch < num_instance
+    #   num_instance = num_instance - last_batch
 
     # begin_ind, idx_to_split, _ = right_split_ind_by_window(1, self.full_data.data_size, self.window_size)
     begin_ind, idx_to_split, _ = right_split_ind_by_batch(1, self.full_data.data_size, self.args.bs)
@@ -213,30 +244,47 @@ class SlidingWindow:
     batch_end_inds = batch_inds[1:]
 
     ### Window params
-  
+
     # init_train_data = BATCH_SIZE
     # init_train_data = math.ceil(num_instance * 0.001)
     # init_train_data = batch_size * max(1,math.floor(init_train_data/num_instances_shift))
     window_size = batch_size * ws_multiplier
     num_init_data = window_size
-    init_train_data = self.get_init_windows_size(window_size, keep_last_n_window_as_window_slides)
+    # init_train_data = self.get_init_windows_size(window_size) # default init_train_data.
+    init_train_data = self.get_init_windows_size(window_size, window_idx_to_start_with=self.args.window_idx_to_start_with) # default init_train_data.
     # init_train_data = window_size # :NOTE: Bad naming, but I keep this for compatibility reason.
 
     # num_instances_shift = init_train_data
     # num_instances_shift = self.get_window_slide_stride(window_size, keep_last_n_window_as_window_slides)
-    num_instances_shift = self.get_window_slide_stride(window_size, window_stride_multiplier)
+
+    num_instances_shift = self.get_window_slide_stride(window_size)
 
     # total_num_ws =  math.floor(num_instance/num_instances_shift) # 6
     # total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
-    
+
     total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
     # init_num_ws = math.floor(init_train_data/num_instances_shift) #6
-    assert init_train_data/num_instances_shift == int(init_train_data/num_instances_shift)
+    # assert init_train_data/num_instances_shift == int(init_train_data/num_instances_shift)
     init_num_ws = int(init_train_data/num_instances_shift)
-    left_num_ws = total_num_ws - init_num_ws 
+    left_num_ws = total_num_ws - init_num_ws # DEPRECATED:
     # left_num_ws = total_num_ws - init_num_ws + 1 # NOTE: this may cause error.
 
-    return window_size, num_init_data, num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws, batch_inds, batch_begin_inds, batch_end_inds 
+    # ws_idx_to_run = list(range(init_num_ws, total_num_ws))
+    ws_idx_pair = self.get_ws_idx_pair(init_train_data,window_size, keep_last_n_window_as_window_slides, window_idx_to_start_with=window_idx_to_start_with)
+
+    # ws_idx_pair_list = [ws_idx_pair]
+    ws_idx_pair_to_run = []
+
+    ws_idx_begin = ws_idx_pair[0]
+    ws_idx_end = ws_idx_pair[1]
+
+    while ws_idx_end <= num_instance - window_size: # only include training data.
+      ws_idx_pair_to_run.append((ws_idx_begin, ws_idx_end))
+      ws_idx_begin += num_instances_shift
+      ws_idx_end += num_instances_shift
+
+
+    return window_size, num_init_data, num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws, batch_inds, batch_begin_inds, batch_end_inds, ws_idx_pair_to_run
 
   def set_sliding_window_framework(self, ws_framework):
     if ws_framework == "forward":
@@ -292,7 +340,7 @@ class SlidingWindow:
 
   def evaluate_batch(self):
     raise NotImplementedError
-  
+
   # def evaluate_epoch(self, epoch, num_batch):
   def evaluate_epoch(self):
     raise NotImplementedError()
@@ -336,7 +384,7 @@ class WindowSlidingForward(SlidingWindow):
 
   def pre_evaluation(self):
 
-    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws, self.batch_inds, self.batch_begin_inds, self.batch_end_inds  = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.keep_last_n_window_as_window_slides, self.args.window_stride_multiplier)
+    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws, self.batch_inds, self.batch_begin_inds, self.batch_end_inds, self.ws_idx_pair_to_run  = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.keep_last_n_window_as_window_slides, self.args.window_stride_multiplier)
 
     self.add_model()
 
@@ -350,6 +398,47 @@ class WindowSlidingForward(SlidingWindow):
     mask = np.logical_and(right, left)
 
     return mask
+
+  def observer_collect_idx(self):
+    self.run_observer.setdefault('run_idx', []).append(self.run_idx)
+    self.ws_observer.setdefault('ws_idx', []).append(self.ws_idx)
+    self.epoch_observer.setdefault('epoch_idx', []).append(self.epoch_idx)
+    self.batch_observer.setdefault('batch_idx', []).append(self.batch_idx)
+
+  def observer_collect_edges_weight(self, pos_edges_weight, neg_edges_weight):
+    if pos_edges_weight is not None:
+      # self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.numpy())
+      self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.cpu().detach().numpy().tolist())
+    else:
+      self.weight_observer['pos_edges_weight'] = None
+
+    if neg_edges_weight is not None:
+      # self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.numpy())
+      self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.cpu().detach().numpy().tolist())
+    else:
+      self.weight_observer['neg_edges_weight'] = None
+
+    weight_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
+    # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
+    weight_observer_file_name = 'weight_observer.pickle'
+    Path(weight_observer_path).mkdir(parents=True, exist_ok=True)
+
+    observer = {}
+    observer.update(self.run_observer)
+    observer.update(self.ws_observer)
+    observer.update(self.epoch_observer)
+    observer.update(self.batch_observer)
+    if self.weight_observer['pos_edges_weight'] is not None:
+      weight_name = 'pos_edges_weight'
+      # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
+      observer.update({weight_name: self.weight_observer[weight_name]})
+      pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
+
+    if self.weight_observer['neg_edges_weight'] is not None:
+      weight_name = 'neg_edges_weight'
+      # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
+      observer.update({weight_name: self.weight_observer[weight_name]})
+      pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
 
   def evaluate_batch(self, model, k, backprop_every):
     args = self.args
@@ -373,6 +462,9 @@ class WindowSlidingForward(SlidingWindow):
 
     ef_iwf_window_dict = self.ef_iwf_window_dict.dict_
     nf_iwf_window_dict = self.nf_iwf_window_dict.dict_
+    ef_window_dict = self.ef_window_dict.dict_
+    nf_window_dict = self.nf_window_dict.dict_
+
     share_selected_random_weight_per_window_dict = self.share_selected_random_weight_per_window_dict.dict_
 
     loss = 0
@@ -425,50 +517,19 @@ class WindowSlidingForward(SlidingWindow):
       # TODO: this function should be in tgn
       model, pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs_raw.cpu().data.numpy())
+      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, ef_window_dict, nf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs_raw.cpu().data.numpy())
 
-      self.run_observer.setdefault('run_idx', []).append(self.run_idx)
-      self.ws_observer.setdefault('ws_idx', []).append(self.ws_idx)
-      self.epoch_observer.setdefault('epoch_idx', []).append(self.epoch_idx)
-      self.batch_observer.setdefault('batch_idx', []).append(self.batch_idx)
+
+      ## assign the correct device to data
+      if pos_edges_weight is not None:
+        pos_edges_weight = pos_edges_weight.to(self.device)
+
+      raise NotImplementedError("haven't test def observer_collect_* yet")
+      self.observer_collect_idx_per_batch()
 
       self.logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
       self.logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
-
-      if pos_edges_weight is not None:
-        # self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.numpy())
-        self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.numpy().tolist())
-      else:
-        self.weight_observer['pos_edges_weight'] = None
-
-      if neg_edges_weight is not None:
-        # self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.numpy())
-        self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.numpy().tolist())
-      else:
-        self.weight_observer['neg_edges_weight'] = None
-
-      weight_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
-      # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
-      weight_observer_file_name = 'weight_observer.pickle'
-      Path(weight_observer_path).mkdir(parents=True, exist_ok=True)
-
-      observer = {}
-      observer.update(self.run_observer)
-      observer.update(self.ws_observer)
-      observer.update(self.epoch_observer)
-      observer.update(self.batch_observer)
-      if self.weight_observer['pos_edges_weight'] is not None:
-        weight_name = 'pos_edges_weight'
-        # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
-        observer.update({weight_name: self.weight_observer[weight_name]})
-        pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
-
-      if self.weight_observer['neg_edges_weight'] is not None:
-        weight_name = 'neg_edges_weight'
-        # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
-        observer.update({weight_name: self.weight_observer[weight_name]})
-        pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
-
+      self.observer_collect_edges_weight(pos_edges_weight, neg_edges_weight)
 
       loss = compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg_edges_weight, batch_idx, criterion, loss, weighted_loss_method)
 
@@ -561,7 +622,7 @@ class WindowSlidingForward(SlidingWindow):
 
 
 
-    pred_score = np.concatenate([pos_prob.cpu().data.detach().numpy(), neg_prob.cpu().data.detach().numpy()])
+    pred_score = np.concatenate([pos_prob.cpu().detach().numpy(), neg_prob.cpu().detach().numpy()])
     true_label = np.concatenate([np.ones(size), np.zeros(size)])
 
     val_auc, val_ap = compute_evaluation_score(true_label,pred_score)
@@ -589,25 +650,9 @@ class WindowSlidingForward(SlidingWindow):
         'val ap: {}'.format(val_auc))
     self.performance_observer.setdefault('Absolute Precision', []).append(val_auc)
 
-
-
-    performance_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
-    # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
-    performance_observer_file_name = 'performance_observer.pickle'
-    Path(performance_observer_path).mkdir(parents=True, exist_ok=True)
-
-    self.run_observer_1.setdefault('run_idx', []).append(self.run_idx)
-    self.ws_observer_1.setdefault('ws_idx', []).append(self.ws_idx)
-    self.epoch_observer_1.setdefault('epoch_idx', []).append(self.epoch_idx)
-    self.batch_observer_1.setdefault('batch_idx', []).append(self.batch_idx)
-
-    observer = {}
-    observer.update(self.run_observer_1)
-    observer.update(self.ws_observer_1)
-    observer.update(self.epoch_observer_1)
-    observer.update(self.batch_observer_1)
-    observer.update(self.performance_observer)
-    pd.DataFrame.from_dict(observer).to_pickle( str(performance_observer_path /performance_observer_file_name))
+    raise NotImplementedError
+    self.observer_collect_idx_per_epoch()
+    self.save_performance_observer()
 
   def get_idx_pair_of_current_concat_windows(self, last_idx_of_current_window, window_stride):
     return (last_idx_of_current_window - window_stride), last_idx_of_current_window
@@ -623,19 +668,47 @@ class WindowSlidingForward(SlidingWindow):
     self.check_point.ws_max = self.total_num_ws
     self.check_point.max_random_weight_range = args.max_random_weight_range
 
-    for ws in range(self.left_num_ws):
+    # ws_idx_begin, ws_idx_end = self.get_ws_idx_pair()
+
+    # for ws in range(self.left_num_ws):
+    # for ws in self.ws_idx_to_run:
+    for ws_idx_begin, ws_idx_end in self.ws_idx_pair_to_run:
+      assert int(ws_idx_begin/self.window_size) == ws_idx_begin/self.window_size
+      ws = int(ws_idx_end/self.window_size) - 1
       self.check_point.ws_idx = ws
+      # self.logger.debug('-ws = {}'.format(ws))
       self.logger.debug('-ws = {}'.format(ws))
       # self.logger.info('ws contain idx from {} to {}'.format(self.init_train_data, self.init_train_data + self.num_instances_shift))
-      self.logger.info('training ws contain idx from {} to {}'.format(self.init_train_data - self.num_instances_shift, self.init_train_data))
+      # self.logger.info('training ws contain idx from {} to {}'.format(self.init_train_data - self.num_instances_shift, self.init_train_data))
+      self.logger.info('training ws contain idx from {} to {}'.format(ws_idx_begin, ws_idx_end))
       self.logger_2.info('-ws = {}'.format(ws))
       self.set_ws_idx(ws)
       # self.evaluate_ws(ws, self.init_train_data, self.args.bs)
-      self.evaluate_ws(ws, self.get_idx_pair_of_current_concat_windows(self.init_train_data, self.num_instances_shift), self.args.bs)
+
+      # idx_pair_of_current_concat_windows =  self.get_idx_pair_of_current_concat_windows(self.init_train_data, self.num_instances_shift)
+      # self.evaluate_ws(ws, idx_pair_of_current_concat_windows, self.args.bs)
+      self.evaluate_ws((ws_idx_begin, ws_idx_end), self.args.bs)
 
 
   # def get_num_batch_idx_pair(self, window_idx_pair,batch_size, keep_last_n_window_as_window_slides, first_batch_idx=None, last_batch_idx=None):
-  def get_num_batch_idx_pair(self, window_idx_pair,batch_size, keep_last_n_window_as_window_slides):
+  def get_ws_idx_pair(self, init_ws_end_idx, window_size, keep_last_n_window_as_window_slides, window_idx_to_start_with=None):
+    assert init_ws_end_idx/window_size == int(init_ws_end_idx/window_size)
+
+    ws_idx_begin =  0
+    ws_idx_end = init_ws_end_idx
+
+    if window_idx_to_start_with is not None:
+      ws_idx_end = window_size * window_idx_to_start_with
+      assert ws_idx_end >= init_ws_end_idx
+
+    if keep_last_n_window_as_window_slides is not None:
+      assert keep_last_n_window_as_window_slides <= (init_ws_end_idx/ window_size)
+      ws_idx_begin = ws_idx_end - (keep_last_n_window_as_window_slides * window_size)
+      assert ws_idx_begin >= 0
+
+    return ws_idx_begin, ws_idx_end
+
+  def get_num_batch_idx_pair(self, window_idx_pair,batch_size, keep_last_n_window_as_window_slides=None):
 
     num_batch_begin = 0
     num_batch_end = math.floor((window_idx_pair[1])/batch_size)
@@ -644,6 +717,7 @@ class WindowSlidingForward(SlidingWindow):
       # num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
       num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
 
+
     # if first_batch_idx is not None:
     #   raise NotImplementedError
     #   num_batch_begin = min(num_batch_begin, first_batch_idx)
@@ -651,10 +725,11 @@ class WindowSlidingForward(SlidingWindow):
     # if last_batch_idx is not None:
     #   raise NotImplementedError
     #   num_batch_end = min(num_batch_end, last_batch_idx)
-    
+
     return num_batch_begin, num_batch_end
 
-  def evaluate_ws(self, ws, idx_pair, batch_size):
+  # def evaluate_ws(self, ws, idx_pair, batch_size):
+  def evaluate_ws(self, idx_pair, batch_size):
     """
     params
     -----
@@ -685,8 +760,8 @@ class WindowSlidingForward(SlidingWindow):
 
     self.save_checkpoint_per_ws()
 
-    self.init_num_ws += 1
-    self.init_train_data = self.init_num_ws * self.num_instances_shift
+    # self.init_num_ws += 1 # DEBUG:
+    # self.init_train_data = self.init_num_ws * self.num_instances_shift # DEBUG:
 
     # Training has finished, we have loaded the best model, and we want to backup its current
     # memory (which has seen validation edges) so that it can also be used when testing on unseen
@@ -708,12 +783,76 @@ class WindowSlidingEnsemble(SlidingWindow):
   def get_conditions(self):
     self.prefix, self.neg_sample_method, self.neg_edges_formation, self.weighted_loss_method, self.compute_xf_iwf_with_sigmoid = get_conditions(self.args)
 
+  def get_ws_idx_pair(self, init_ws_end_idx, window_size, keep_last_n_window_as_window_slides=None, window_idx_to_start_with=None):
+    assert init_ws_end_idx/window_size == int(init_ws_end_idx/window_size)
+
+    ws_idx_begin =  0
+    ws_idx_end = init_ws_end_idx
+
+    if window_idx_to_start_with is not None:
+      ws_idx_end = window_size * window_idx_to_start_with
+      assert ws_idx_end >= init_ws_end_idx
+
+    if keep_last_n_window_as_window_slides is not None:
+      assert keep_last_n_window_as_window_slides <= (init_ws_end_idx/ window_size)
+      ws_idx_begin = ws_idx_end - (keep_last_n_window_as_window_slides * window_size)
+      assert ws_idx_begin >= 0
+
+    return ws_idx_begin, ws_idx_end
+
+    return init_windows_size
+  def get_sliding_window_params(self, num_instance, batch_size, ws_multiplier, window_stride_multiplier=None, init_n_instances_as_multiple_of_ws=None):
+
+    begin_ind, idx_to_split, _ = right_split_ind_by_batch(1, self.full_data.data_size, self.args.bs)
+
+    batch_inds = split_a_window_into_batches(begin_ind, idx_to_split- 1, self.args.bs)
+    batch_begin_inds = batch_inds[:-1]
+    batch_end_inds = batch_inds[1:]
+
+    ### Window params
+    window_size = batch_size * ws_multiplier
+    num_init_data = window_size
+    init_train_data = self.get_init_windows_size(window_size) # default init_train_data.
+
+    num_instances_shift = self.get_window_slide_stride(window_size, window_stride_multiplier)
+
+    total_num_ws =  math.ceil(num_instance/num_instances_shift) # 6
+    init_num_ws = int(init_train_data/num_instances_shift)
+    left_num_ws = total_num_ws - init_num_ws # DEPRECATED:
+
+    ws_idx_pair = self.get_ws_idx_pair(init_train_data,window_size,)
+
+    ws_idx_pair_to_run = []
+
+    ws_idx_begin = ws_idx_pair[0]
+    ws_idx_end = ws_idx_pair[1]
+
+    # while ws_idx_end <= num_instance - window_size: # only include training data.
+    while ws_idx_end <= num_instance: # only include training data.
+      ws_idx_pair_to_run.append((ws_idx_begin, ws_idx_end))
+      ws_idx_begin += num_instances_shift
+      ws_idx_end += num_instances_shift
+
+    # get init number of instances
+    init_n_instances = None
+    if init_n_instances_as_multiple_of_ws is not None:
+      init_n_instances = init_n_instances_as_multiple_of_ws * window_size
+
+    return window_size, num_init_data, num_instances_shift, init_train_data, total_num_ws, init_num_ws, left_num_ws, batch_inds, batch_begin_inds, batch_end_inds, ws_idx_pair_to_run, init_n_instances
+
   def pre_evaluation(self):
-    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier)
+    # self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier)
+    # self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws, _, _, _, _ = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.window_stride_multiplier)
+    self.window_size, self.num_init_data,self.num_instances_shift, self.init_train_data, self.total_num_ws, self.init_num_ws, self.left_num_ws, self.batch_inds, self.batch_begin_inds, self.batch_end_inds, self.ws_idx_pair_to_run, self.init_n_instances  = self.get_sliding_window_params(self.full_data.data_size, self.args.bs, self.args.ws_multiplier, self.args.window_stride_multiplier,self.args.init_n_instances_as_multiple_of_ws)
 
-    begin_ind, idx_to_split, _ = right_split_ind_by_window(1, self.full_data.data_size, self.window_size)
+    begin_ind, idx_to_split, _ = right_split_ind_by_window(1, self.full_data.data_size, self.window_size, self.init_n_instances)
 
-    self.ensemble_begin_inds, self.ensemble_end_inds = get_all_ensemble_training_data_inds(begin_ind, idx_to_split-1, self.window_size, fix_begin_ind=False)
+    # if init_n_instances_as_multiple_of_ws flag is None, init_n_instances is set to be at the start of the last window.
+    if self.init_n_instances is None:
+      self.init_n_instances = idx_to_split - self.window_size # FIXME: something aint right
+
+    # self.ensemble_begin_inds, self.ensemble_end_inds = get_all_ensemble_training_data_inds(begin_ind, idx_to_split-1, self.window_size, fix_begin_ind=False)
+    self.ensemble_begin_inds, self.ensemble_end_inds = get_all_ensemble_training_data_inds(begin_ind, self.init_n_instances-1, self.window_size, fix_begin_ind=self.args.fix_begin_data_ind_of_models_in_ensemble)
 
   def add_model(self, idx):
 
@@ -723,13 +862,86 @@ class WindowSlidingEnsemble(SlidingWindow):
     # self.models[idx]["model"] = self.model
     # self.models[idx].setdefault("model", self.model)
     # self.models[idx] = {"model": self.model}
-    self.models.setdefault(idx, {"model": self.model})
+    self.models.setdefault(idx, {"model": self.model, "loss": None})
 
-    self.batch_inds = split_a_window_into_batches(self.ensemble_begin_inds[idx], self.ensemble_end_inds[idx], self.args.bs)
-    self.batch_begin_inds = self.batch_inds[:-1]
-    self.batch_end_inds = self.batch_inds[1:]
+    # self.batch_inds = split_a_window_into_batches(self.ensemble_begin_inds[idx], self.ensemble_end_inds[idx], self.args.bs)
+    # self.batch_begin_inds = self.batch_inds[:-1]
+    # self.batch_end_inds = self.batch_inds[1:]
 
-  def evaluate_batch(self, ensemble_idx, k, backprop_every):
+  # def observer_collect_idx_per_epoch(self):
+  #   self.run_observer_1.setdefault('run_idx', []).append(self.run_idx)
+  #   self.epoch_observer_1.setdefault('epoch_idx', []).append(self.epoch_idx)
+  #   self.batch_observer_1.setdefault('batch_idx', []).append(self.batch_idx)
+  #   self.ensemble_observer_1.setdefault('ensemble_idx', []).append(self.ensemble_idx)
+
+  # def save_performance_observer(self):
+  #   performance_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
+  #   # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
+  #   performance_observer_file_name = 'performance_observer.pickle'
+  #   Path(performance_observer_path).mkdir(parents=True, exist_ok=True)
+
+  #   observer = {}
+  #   observer.update(self.run_observer_1)
+  #   observer.update(self.ws_observer_1)
+  #   observer.update(self.epoch_observer_1)
+  #   observer.update(self.batch_observer_1)
+  #   observer.update(self.performance_observer)
+  #   pd.DataFrame.from_dict(observer).to_pickle( str(performance_observer_path /performance_observer_file_name))
+
+  # def observer_collect_idx(self):
+  #   self.run_observer.setdefault('run_idx', []).append(self.run_idx)
+  #   self.ws_observer.setdefault('ws_idx', []).append(self.ws_idx)
+  #   self.epoch_observer.setdefault('epoch_idx', []).append(self.epoch_idx)
+  #   self.batch_observer.setdefault('batch_idx', []).append(self.batch_idx)
+
+  def observer_collect_idx_per_batch(self):
+    self.run_observer.setdefault('run_idx', []).append(self.run_idx)
+    self.epoch_observer.setdefault('epoch_idx', []).append(self.epoch_idx)
+    self.batch_observer.setdefault('batch_idx', []).append(self.batch_idx)
+    self.ensemble_observer.setdefault('ensemble_idx', []).append(self.ensemble_idx)
+    self.ws_observer.setdefault('ws_idx', []).append(self.ws_idx)
+
+  def observer_collect_edges_weight(self, pos_edges_weight, neg_edges_weight):
+    self.logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
+    self.logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
+
+    if pos_edges_weight is not None:
+      # self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.numpy())
+      self.weight_observer.setdefault('pos_edges_weight', []).append(pos_edges_weight.cpu().detach().numpy().tolist())
+    else:
+      self.weight_observer['pos_edges_weight'] = None
+
+    if neg_edges_weight is not None:
+      # self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.numpy())
+      self.weight_observer.setdefault('neg_edges_weight', []).append(neg_edges_weight.cpu().detach().numpy().tolist())
+    else:
+      self.weight_observer['neg_edges_weight'] = None
+
+    weight_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
+    # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
+    weight_observer_file_name = 'weight_observer.pickle'
+    Path(weight_observer_path).mkdir(parents=True, exist_ok=True)
+
+  def save_weight_observer(self):
+    observer = {}
+    observer.update(self.run_observer)
+    observer.update(self.ensemble_observer)
+    observer.update(self.epoch_observer)
+    observer.update(self.batch_observer)
+    observer.update(self.ws_observer)
+    if self.weight_observer['pos_edges_weight'] is not None:
+      weight_name = 'pos_edges_weight'
+      # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
+      observer.update({weight_name: self.weight_observer[weight_name]})
+      pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
+
+    if self.weight_observer['neg_edges_weight'] is not None:
+      weight_name = 'neg_edges_weight'
+      # pd.DataFrame.from_dict(self.weight_observer[weight_name]).to_csv( str(weight_observer_path /weight_observer_file_name.format(weight_name, self.run_idx, self.ws_idx, self.epoch_idx, self.batch_idx)))
+      observer.update({weight_name: self.weight_observer[weight_name]})
+      pd.DataFrame.from_dict(observer).to_pickle( str(weight_observer_path /weight_observer_file_name))
+
+  def evaluate_batch(self, ensemble_idx, k, backprop_every, checkpoint_loss):
     model = self.models[ensemble_idx]["model"]
     args = self.args
     full_data = self.full_data
@@ -743,8 +955,6 @@ class WindowSlidingEnsemble(SlidingWindow):
     weighted_loss_method = self.weighted_loss_method
     compute_xf_iwf_with_sigmoid = self.compute_xf_iwf_with_sigmoid
 
-
-
     num_instance = full_data.data_size
     max_weight = args.max_random_weight_range
     BATCH_SIZE = args.bs
@@ -753,8 +963,13 @@ class WindowSlidingEnsemble(SlidingWindow):
     ef_iwf_window_dict = self.ef_iwf_window_dict.dict_
     nf_iwf_window_dict = self.nf_iwf_window_dict.dict_
     share_selected_random_weight_per_window_dict = self.share_selected_random_weight_per_window_dict.dict_
+    nf_window_dict = self.nf_window_dict.dict_
+    ef_window_dict = self.ef_window_dict.dict_
 
-    loss = 0
+    if checkpoint_loss is None:
+      loss = 0
+    else:
+      loss = checkpoint_loss
     optimizer.zero_grad()
 
     # Custom loop to allow to perform backpropagation only every a certain number of batches
@@ -763,7 +978,6 @@ class WindowSlidingEnsemble(SlidingWindow):
 
       batch_idx = k + j
       batch_ref_window_size = 0 # :NOTE: added for compatibility reason
-
 
       ## Indexing
       start_train_idx = self.batch_begin_inds[batch_idx]
@@ -800,13 +1014,16 @@ class WindowSlidingEnsemble(SlidingWindow):
       criterion = get_criterion()
 
 
-      pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+      model, pos_prob, neg_prob = compute_edges_probabilities_with_custom_sampled_nodes(model, neg_edges_formation, negatives_dst_batch, negatives_src_batch, sources_batch, destinations_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
-      raise NotImplementedError("time decay")
-      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay)
+      pos_edges_weight, neg_edges_weight = get_edges_weight(train_data,k, BATCH_SIZE,max_weight,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, nf_iwf_window_dict, ef_window_dict, nf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=negatives_src_batch, compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=args.edge_weight_multiplier, use_time_decay=args.use_time_decay, time_diffs = model.time_diffs_raw.cpu().data.numpy())
+
+      self.observer_collect_idx_per_batch()
 
       self.logger_2.info(f'pos_edges_weight = {pos_edges_weight}')
       self.logger_2.info(f'neg_edges_weight = {neg_edges_weight}')
+      self.observer_collect_edges_weight(pos_edges_weight, neg_edges_weight)
+      self.save_weight_observer()
 
       loss = compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg_edges_weight, batch_idx, criterion, loss, weighted_loss_method)
 
@@ -825,7 +1042,32 @@ class WindowSlidingEnsemble(SlidingWindow):
     self.end_train_idx = end_train_idx
     self.train_rand_sampler = train_rand_sampler
 
-  def evaluate_epoch(self, ensemble_idx, epoch, num_batch):
+  def observer_collect_idx_per_epoch(self):
+    self.run_observer_1.setdefault('run_idx', []).append(self.run_idx)
+    self.epoch_observer_1.setdefault('epoch_idx', []).append(self.epoch_idx)
+    self.batch_observer_1.setdefault('batch_idx', []).append(self.batch_idx)
+    self.ensemble_observer_1.setdefault('ensemble_idx', []).append(self.ensemble_idx)
+    self.ws_observer_1.setdefault('ws_idx', []).append(self.ws_idx)
+
+  def save_performance_observer(self):
+    performance_observer_path = Path(self.l_2.log_relative_path)/ f'{self.l_2.log_time}'
+    # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
+    performance_observer_file_name = 'performance_observer.pickle'
+    Path(performance_observer_path).mkdir(parents=True, exist_ok=True)
+
+    observer = {}
+    observer.update(self.run_observer_1)
+    observer.update(self.ensemble_observer_1)
+    observer.update(self.epoch_observer_1)
+    observer.update(self.batch_observer_1)
+    observer.update(self.performance_observer)
+    observer.update(self.ws_observer_1)
+    # observer.update(self.ws_observer)
+    pd.DataFrame.from_dict(observer).to_pickle( str(performance_observer_path /performance_observer_file_name))
+
+
+  # def evaluate_epoch(self, ensemble_idx, epoch, num_batch):
+  def evaluate_epoch(self, ensemble_idx, epoch, num_batch_pair, checkpoint_loss, window_pred_pair):
     model = self.models[ensemble_idx]["model"]
     args = self.args
     full_data = self.full_data
@@ -842,13 +1084,18 @@ class WindowSlidingEnsemble(SlidingWindow):
     if USE_MEMORY:
       model.memory.__init_memory__()
 
-    for k in range(0, num_batch, args.backprop_every):
+    # for k in range(0, num_batch, args.backprop_every):
+    # NOTE: evalaute_epoch() only produce expected behavior if window size is equal to batch size.
+    for k in range(num_batch_pair[0], num_batch_pair[1], args.backprop_every):
     # logger.debug('---batch = {}'.format(k))
-      self.evaluate_batch(ensemble_idx, k, args.backprop_every)
-      start_train_idx = self.start_train_idx
-      end_train_idx = self.end_train_idx
+      self.set_batch_idx(k)
+      self.evaluate_batch(ensemble_idx, k, args.backprop_every, checkpoint_loss)
+      # start_train_idx = self.start_train_idx
+      # end_train_idx = self.end_train_idx
       train_rand_sampler = self.train_rand_sampler
 
+    begin_window_pred_idx, end_window_pred_idx = window_pred_pair
+    # end_train_idx = window_pred_pair[0]
     epoch_time = time.time() - start_epoch
     self.epoch_times.append(epoch_time)
 
@@ -866,8 +1113,10 @@ class WindowSlidingEnsemble(SlidingWindow):
         train_memory_backup = model.memory.backup_memory()
 
     # VAL_BATCH_SIZE = BATCH_SIZE * 1
-    VAL_BATCH_SIZE = self.window_size
-    sources_batch, destinations_batch, edge_idxs_batch, timestamps_batch, _ = self.set_params_batch(end_train_idx, end_train_idx + VAL_BATCH_SIZE)
+    # VAL_BATCH_SIZE = self.window_size
+
+    # sources_batch, destinations_batch, edge_idxs_batch, timestamps_batch, _ = self.set_params_batch(end_train_idx, end_train_idx + VAL_BATCH_SIZE)
+    sources_batch, destinations_batch, edge_idxs_batch, timestamps_batch, _ = self.set_params_batch(begin_window_pred_idx, end_window_pred_idx)
 
 
     size = len(sources_batch)
@@ -897,15 +1146,30 @@ class WindowSlidingEnsemble(SlidingWindow):
     total_epoch_time = time.time() - start_epoch
     self.total_epoch_times.append(total_epoch_time)
 
+    mean_loss = np.mean(self.m_loss)
     self.logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
-    self.logger.info('Epoch mean loss: {}'.format(np.mean(self.m_loss)))
+    self.logger.info('Epoch mean loss: {}'.format(mean_loss))
     # NOTE: I switch val_ap and val_acc, so that it consistent with output from compute_evalaution_score
     self.logger.info(
         'val auc: {}'.format(val_ap))
     self.logger.info(
         'val ap: {}'.format(val_auc))
 
-  def evaluate_ensemble(self, n_ensemble):
+    self.performance_observer.setdefault('Mean Loss', []).append(mean_loss)
+    self.performance_observer.setdefault('AUC', []).append(val_ap)
+    self.performance_observer.setdefault('Absolute Precision', []).append(val_auc)
+
+    self.observer_collect_idx_per_epoch()
+    self.save_performance_observer()
+
+    return self.m_loss[-1] # return last loss
+
+  def evaluate_ensemble(self, n_ensemble, ws_idx):
+    ensemble_prediction_results_path = Path(self.l_3.log_relative_path)/ f'{self.l_3.log_time}'
+    # weight_observer_file_name = '{}_run={}_ws={}_epoch={}_batch={}.csv'
+    ensemble_prediction_results_file_name = 'ensemble_prediction_results.pickle'
+    Path(ensemble_prediction_results_path).mkdir(parents=True, exist_ok=True)
+
     pred_val_list = []
     raw_pred_val_list = []
     for ensemble_idx in range(n_ensemble):
@@ -914,11 +1178,26 @@ class WindowSlidingEnsemble(SlidingWindow):
       pred_val_list.append(pred_val)
       raw_pred_val_list.append(raw_pred_val)
 
+      self.ensemble_prediction_observer.setdefault('raw_pred_val', []).append(raw_pred_val)
+      self.ensemble_prediction_observer.setdefault('ws_idx', []).append(ws_idx)
+      self.ensemble_prediction_observer.setdefault('ensemble_idx', []).append(ensemble_idx)
+      self.ensemble_prediction_observer.setdefault('true_label', []).append(self.models[0]["true_label"])
+
+      # tmp = {'raw_pred_val': [raw_pred_val]}
+      # tmp.update({'ensemble_idx': ensemble_idx})
+      # tmp.update({'true_label': [self.models[0]["true_label"]]})
+
+    pd.DataFrame.from_dict(self.ensemble_prediction_observer).to_pickle(
+      str(ensemble_prediction_results_path/ensemble_prediction_results_file_name))
+
     sum_vote = np.sum(np.array(pred_val_list), axis=0)
+    arg_max_vote = np.sum(np.array(raw_pred_val_list), axis=0)
     mean_vote = np.mean(np.array(raw_pred_val_list), axis=0)
 
     voted_pred_list = []
-    for v in sum_vote:
+    # for v in sum_vote:
+    for v in arg_max_vote:
+      # TODO: this function should be change to support multiple class prediction.
        voted_pred = 1 if v > n_ensemble/2 else 0
        voted_pred_list.append(voted_pred)
 
@@ -927,48 +1206,134 @@ class WindowSlidingEnsemble(SlidingWindow):
     precision = compute_precision(cm)
     auc_for_ensemble = compute_auc_for_ensemble(true_label, mean_vote)
     return precision, auc_for_ensemble
-    
+
+
+  def set_ensemble_idx(self, ensemble_idx):
+    self.ensemble_idx = ensemble_idx
+
+  def get_num_batch_idx_pair(self, window_idx_pair,batch_size):
+
+    num_batch_end = math.floor((window_idx_pair[1])/batch_size)
+    num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
+
+    # num_batch_begin = 0
+    # num_batch_end = math.floor((window_idx_pair[1])/batch_size)
+
+    # if keep_last_n_window_as_window_slides is not None:
+    #   num_batch_begin = math.floor((window_idx_pair[0])/batch_size)
+
+    return num_batch_begin, num_batch_end
+
+  def get_ws_left_to_run(self,ensemble_end_idx_before_slide, ws_idx_pair):
+    # FIXME: this can be optimized
+    for ind, (begin_ind, end_ind) in enumerate(ws_idx_pair):
+      if end_ind > ensemble_end_idx_before_slide + 1:
+        ws_idx_left = len(ws_idx_pair) - (ind)
+        ws_idx_pair_left = ws_idx_pair[-ws_idx_left:]
+        assert len(ws_idx_pair_left) >= 2
+        ws_idx_pair_left_to_run = ws_idx_pair_left[:-1]
+        ws_first_idx_before_slide = ind
+        return ws_first_idx_before_slide,ws_idx_left, ws_idx_pair_left_to_run, ws_idx_pair_left
+
 
   def evaluate(self):
     args = self.args
-    self.check_point.data = args.data
-    self.check_point.prefix = self.prefix
-    self.check_point.bs = args.bs
-    self.check_point.epoch_max = args.n_epoch
-    self.check_point.ws_max = self.total_num_ws
-    self.check_point.max_random_weight_range = args.max_random_weight_range
-
     assert len(self.ensemble_begin_inds) == len(self.ensemble_end_inds)
 
     n_ensembles = len(self.ensemble_begin_inds)
-    for idx in range(n_ensembles):
-      self.check_point.ws_idx = 99999
-      self.logger.debug('--ensemble_idx = {}'.format(idx))
-      self.logger_2.info('--ensemble_idx = {}'.format(idx))
-      self.m_loss = []
-      self.epoch_times = []
-      self.total_epoch_times = []
-      self.add_model(idx)
 
-      self.ef_iwf_window_dict.dict_ = {}
-      self.nf_iwf_window_dict.dict_ = {}
-      self.share_selected_random_weight_per_window_dict.dict_ = {}
+    # self.check_point.data = args.data
+    # self.check_point.prefix = self.prefix
+    # self.check_point.bs = args.bs
+    # self.check_point.epoch_max = args.n_epoch
+    # self.check_point.ws_max = self.total_num_ws
+    # self.check_point.max_random_weight_range = args.max_random_weight_range
 
-      size_of_current_concat_windows = self.ensemble_begin_inds[idx] - self.ensemble_begin_inds[idx] + 1
-      num_batch = math.ceil((size_of_current_concat_windows)/args.bs)
+    self.check_point_dict = {}
+    for i in range(n_ensembles):
+      self.check_point_dict[i] = self.check_point
+      self.check_point_dict[i].data = args.data
+      self.check_point_dict[i].prefix = self.prefix
+      self.check_point_dict[i].bs = args.bs
+      self.check_point_dict[i].epoch_max = args.n_epoch
+      self.check_point_dict[i].ws_max = self.total_num_ws
+      self.check_point_dict[i].max_random_weight_range = args.max_random_weight_range
 
-      for epoch in range(self.n_epoch):
-        self.check_point.epoch_idx = epoch
-        self.check_point.get_checkpoint_path()
+    ws_first_idx_before_slide, ws_left_to_run, ws_idx_pair_left_to_run, ws_idx_pair_left = self.get_ws_left_to_run(self.init_n_instances,self.ws_idx_pair_to_run) # FIXME: replace 1000 with variable.
+    # for idx in range(n_ensembles):
+    assert ws_idx_pair_left_to_run[0][0] == self.init_n_instances
+    for ws_idx_offset, ws_idx_pair in enumerate(ws_idx_pair_left_to_run):
+      self.ws_idx = ws_idx_offset + ws_first_idx_before_slide
+      for idx, (ensemble_idx_begin, ensemble_idx_end) in enumerate(zip(self.ensemble_begin_inds,self.ensemble_end_inds)):
+        # TODO: load model for the next round.
 
-        self.logger.debug('--epoch = {}'.format(epoch))
-        self.logger_2.info('--epoch = {}'.format(epoch))
-        self.logger.info(f'max_weight = {self.args.max_random_weight_range}')
-        self.evaluate_epoch(idx, epoch, num_batch)
+        self.set_ensemble_idx(idx)
+        # self.check_point.ws_idx = 99999
+        # self.check_point.ensemble_idx = idx
+        self.check_point_dict[idx].ensemble_idx = idx
+        self.check_point_dict[idx].ws_idx = self.ws_idx
+        self.logger.debug('--ensemble_idx = {}'.format(idx))
+        self.logger_2.info('--ensemble_idx = {}'.format(idx))
+        self.logger.debug('--ensemble_idx_pair = {}'.format((ensemble_idx_begin, ensemble_idx_end)))
+        self.logger_2.info('--ensemble_idx_pair = {}'.format((ensemble_idx_begin, ensemble_idx_end)))
+        self.logger.debug('--ws_idx = {}'.format(self.ws_idx))
+        self.logger_2.info('--ws_idx = {}'.format(self.ws_idx))
+        self.logger.debug('--ws_idx_pair = {}'.format(ws_idx_pair))
+        self.logger_2.info('--ws_idx_pair = {}'.format(ws_idx_pair))
+        self.m_loss = []
+        self.epoch_times = []
+        self.total_epoch_times = []
+        if idx in self.models:
+          # FIXME: code is really patchy. fix it
+          self.check_point_dict[idx].ws_idx = self.ws_idx - 1
+          checkpoint = torch.load(self.check_point_dict[idx].get_checkpoint_path())
+          self.models[idx]["model"].load_state_dict(checkpoint['model_state_dict'])
+          self.optimizer.load_state_dict( checkpoint['optimizer_state_dict'] )
+          self.models[idx].setdefault("loss", checkpoint['loss'])
+          self.check_point_dict[idx].ws_idx = self.check_point_dict[idx].ws_idx + 1
+        else:
+          self.add_model(idx) # FIXME: make it works with window sliding ensemble.
+        self.ef_iwf_window_dict.dict_ = {}
+        self.nf_iwf_window_dict.dict_ = {}
+        self.share_selected_random_weight_per_window_dict.dict_ = {}
 
-    precision, auc_for_ensemble = self.evaluate_ensemble(n_ensembles)
-    self.logger.info(f'precision of enemble = {precision}')
-    self.logger.info(f'auc of enemble = {auc_for_ensemble}')
+        # size_of_current_concat_windows = self.ensemble_end_inds[idx] - self.ensemble_begin_inds[idx] + 1
+        # num_batch = math.ceil((size_of_current_concat_windows)/args.bs)
+
+        # for ws_idx_begin, ws_idx_end in self.ws_idx_pair_to_run:
+        # for ensemble_idx_begin, ensemble_idx_end in zip(self.ensemble_begin_inds,self.ensemble_end_inds):
+        num_batch_begin, num_batch_end = self.get_num_batch_idx_pair((ensemble_idx_begin,ensemble_idx_end+1), self.args.bs)
+        last_loss = None
+        for epoch in range(self.n_epoch):
+          self.check_point_dict[idx].epoch_idx = epoch
+          self.check_point_dict[idx].get_checkpoint_path()
+
+          self.logger.debug('--epoch = {}'.format(epoch))
+          self.logger_2.info('--epoch = {}'.format(epoch))
+          self.logger.info(f'max_weight = {self.args.max_random_weight_range}')
+          self.set_epoch_idx(epoch)
+
+          # self.evaluate_epoch(idx, epoch, num_batch)
+          last_loss = self.evaluate_epoch(idx, epoch, (num_batch_begin, num_batch_end), self.models[idx]['loss'], ws_idx_pair)
+          # self.set_ws_idx(ws)
+
+        # save model
+        # self.save_checkpoint_per_ws()
+
+        assert last_loss is not None
+        # if self.args.save_checkpoint:
+        torch.save({
+          'model_state_dict':self.models[idx]['model'].state_dict(),
+          'optimizer_state_dict':self.optimizer.state_dict(),
+          'loss': last_loss
+        }, self.check_point_dict[idx].get_checkpoint_path())
+
+      # raise NotImplementedError('make sure that ensemble evaluation works as expected as window slide forward.')
+      precision, auc_for_ensemble = self.evaluate_ensemble(n_ensembles, self.ws_idx)
+      self.logger.info(f'precision of enemble = {precision}')
+      self.logger.info(f'auc of enemble = {auc_for_ensemble}')
+    # self.observer_collect_idx_per_epoch()
+    # self.save_performance_observer()
 
 
 class WindowSlidingForwardNodeClassification(WindowSlidingForward):

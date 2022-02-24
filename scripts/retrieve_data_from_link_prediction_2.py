@@ -28,46 +28,32 @@ def draw(df, x, y, hue):
     plt.yscale('log')
     plt.show()
 
-# draw_multiple()
-
 vc =  ValueCollection()
 
-# # python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --keep_last_n_window_as_window_slides 3 --window_stride_multiplier 1 --use_nf_iwf_weight
-# log_file = '1644012732.606389'
-# c73 = LinkPredictionCrawler_1(log_file)
-# c73.crawl_data()
-# c73.df['Name'] = log_file
-# vc.append_value(c73.df)
 
-# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 10000 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --keep_last_n_window_as_window_slides 1 --window_stride_multiplier 1
-log_file = '1644034660.7790797'
-c74 = LinkPredictionCrawler_1(log_file)
-c74.crawl_data()
-c74.df['Name'] = log_file
-vc.append_value(c74.df)
+# (list "-d" "reddit_10000" "--use_memory" "--n_runs" "1" "--n_epoch" "2" "--bs" "1000" "--ws_multiplier" "1" "--custom_prefix" "tmp" "--ws_framework" "ensemble"
+# log_file = '1644512354.6743796'
+log_file = '1644514533.8118901'
+c75 = LinkPredictionCrawler_1(log_file)
+c75.crawl_data()
+c75.df['Name'] = log_file
+vc.append_value(c75.df)
 
-# # python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 50 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --keep_last_n_window_as_window_slides 1 --window_stride_multiplier 1
-# # log_file = '1643944198.2235723' # 1 run
-# log_file = '1643950077.9129927'
-# c59 = LinkPredictionCrawler_1(log_file)
-# c59.crawl_data()
-# c59.df['Name'] = log_file
-# vc.append_value(c59.df)
-
+# orignal
+log_file = '1642416734.1726859'
+c76 = LinkPredictionCrawler_1(log_file)
+c76.crawl_data()
+# c76.df = c75.sdomething
+# c76.df = c76.df
+c76.df['Name'] = log_file
+c76.df.rename(columns={'ws_idx':'model_idx'})
+vc.append_value(c76.df)
 df = pd.concat(vc.dfs)
 df.reset_index(inplace=True)
-df = pd.melt(df, id_vars=['index', 'ws_idx', 'batch_idx', 'epoch_idx', 'Name', 'Mean Loss'], value_vars=['AUC','Absolute Precision'], var_name='Metrics', value_name='Metrics Values')
+df = pd.melt(df, id_vars=['index', 'ensemble_idx', 'batch_idx', 'epoch_idx', 'Name', 'Mean Loss'], value_vars=['AUC','Absolute Precision'], var_name='Metrics', value_name='Metrics Values')
 
-# # sns.relplot(x='batch_idx', y='Metrics Values', data=df, col="Metrics", kind='line', hue='Name')
-# # sns.relplot(x='batch_idx', y='Mean Loss', data=df, col="Metrics", kind='line', hue='Name')
-# sns.relplot(x='epoch_idx', y='Mean Loss', data=df[df['batch_idx'] == 0], col="Metrics", kind='line', hue='Name')
-# plt.yscale('log')
-# plt.show()
-
-
-
-# sns.relplot(x='epoch_idx', y='Metrics Values', data=df[ np.logical_and(df['batch_idx'] == 0, df['epoch_idx'] < 500) ], col="Metrics",kind='line')
-sns.relplot(x='epoch_idx', y='Metrics Values', data=df[df['epoch_idx'] < 1000], hue='batch_idx', col="Metrics",kind='line')
-# sns.relplot(x='epoch_idx', y='Metrics Values', data=df, hue='batch_idx', col="Metrics",kind='line')
+# sns.relplot(x='epoch_idx', y='Metrics Values', data=df, hue='ensemble_idx', col="Metrics",kind='line')
+sns.catplot(x='epoch_idx', y='Metrics Values', data=df, hue='ensemble_idx', col="Metrics",kind='bar')
 plt.yscale('log')
+# plt.savefig('/mnt/c/Users/terng/OneDrive/Documents/Working/tgn/img/overfitting_model_loss.png')
 plt.show()

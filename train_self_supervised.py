@@ -73,6 +73,7 @@ class LinkPredictionArgs(Args):
                                                     'each user')
     parser.add_argument('--different_new_nodes', action='store_true',
                         help='Whether to use disjoint set of new nodes for train and val')
+
     parser.add_argument('--uniform', action='store_true',
                         help='take uniform sampling from temporal neighbors')
     parser.add_argument('--randomize_features', action='store_true',
@@ -95,6 +96,8 @@ class LinkPredictionArgs(Args):
     parser.add_argument('--use_nf_iwf_weight', action='store_true', help='use nf_iwf as weight of positive edges in BCE loss')
     parser.add_argument('--use_ef_weight', action='store_true',
                         help='use ef as weight of positive edges in BCE loss')
+
+    parser.add_argument('--use_nf_weight', action='store_true', help='use nf as weight of positive edges in BCE loss')
     parser.add_argument('--use_nf_iwf_neg_sampling', action='store_true',
                         help='use nf_iwf to rank user nodes to sample negative edges pair incident to user nodes.')
     parser.add_argument('--use_sigmoid_ef_iwf_weight', action='store_true',
@@ -121,8 +124,12 @@ class LinkPredictionArgs(Args):
     parser.add_argument('--window_stride_multiplier', type=int, default=1, help='window_stride_multiplier * window_size == window_stride')
     # parser.add_argument('--last_instances_idx', type=int, default=None, help='index of last instances to be run')
     # parser.add_argument('--first_instances_idx', type=int, default=None, help='index of first instances to be run')
-    parser.add_argument('--first_batch_idx', type=int, default=None, help='first batch idx to be run')
-    parser.add_argument('--last_batch_idx', type=int, default=None, help='last batch idx to be run')
+    # parser.add_argument('--first_batch_idx', type=int, default=None, help='first batch idx to be run')
+    # parser.add_argument('--last_batch_idx', type=int, default=None, help='last batch idx to be run')
+    parser.add_argument('--window_idx_to_start_with', type=int, default=None, help='idx of window to start the training. idx start from 0.')
+    parser.add_argument('--init_n_instances_as_multiple_of_ws', type=int, default=None, help='initial number of instances as multiple of window size. (currently only support for ensemble)')
+    parser.add_argument('--disable_cuda', action='store_true', help='disable cuda')
+    parser.add_argument('--fix_begin_data_ind_of_models_in_ensemble', action='store_true', help='data of ensembles models are started at the same index and starting index of all models remain the same as window slides forward.') # :NOTE: I may need to change this argument to follow my sliding window diagram i drew in draw.io.
 
     return parser
 
@@ -137,15 +144,17 @@ class TrainLinkPrediction(Train):
     MODEL_SAVE_PATH = f'./saved_models/{args.prefix}-{args.data}.pth'
     self.MODEL_SAVE_PATH = MODEL_SAVE_PATH
 
-  def set_loggers_class(self, l_1, l_2):
+  def set_loggers_class(self, l_1, l_2, l_3):
     self.l_1 = l_1
     self.l_2 = l_2
-    self.set_loggers(l_1.logger, l_2.logger)
+    self.l_3 = l_3
+    self.set_loggers(l_1.logger, l_2.logger, l_3.logger)
 
 
-  def set_loggers(self, logger, logger_2):
+  def set_loggers(self, logger, logger_2, logger_3):
     self.logger = logger
     self.logger_2 = logger_2
+    self.logger_3 = logger_3
 
   def run_model(self):
     args = self.args
@@ -169,7 +178,7 @@ class TrainLinkPrediction(Train):
 
     args = self.args
     # Set device
-    device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() else 'cpu'
+    device_string = 'cuda:{}'.format(GPU) if torch.cuda.is_available() and not args.disable_cuda else 'cpu'
     device = torch.device(device_string)
 
 
@@ -190,6 +199,8 @@ class TrainLinkPrediction(Train):
     args_constraint.args_naming_contraint(args.prefix)
     args_constraint.args_window_sliding_contraint(full_data.data_size, WINDOW_SIZE, BATCH_SIZE)
     args_constraint.args_window_sliding_training(args.backprop_every)
+    args_constraint.args_setting_init_n_instances_as_multiple_of_ws_constraint(args.init_n_instances_as_multiple_of_ws, args.ws_framework)
+    args_constraint.args_fix_begin_data_ind_of_models_in_ensemble(args.fix_begin_data_ind_of_models_in_ensemble, args.ws_framework)
 
     # Compute time statistics
     mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = \
@@ -221,7 +232,7 @@ class TrainLinkPrediction(Train):
       sliding_window.add_data(link_prediction_data_transformed_collection)
       # sliding_window.add_weight_observer()
       sliding_window.add_observers()
-      sliding_window.add_loggers_class(l_1, l_2)
+      sliding_window.add_loggers_class(l_1, l_2, l_3)
       # sliding_window.add_loggers(logger, logger_2)
       sliding_window.add_checkpoints(check_point)
       sliding_window.add_hardware_params(device)
@@ -296,13 +307,26 @@ if __name__ == "__main__":
   l_2.setup_logger()
   # logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
 
+  l_3  = Logger()
+  logger_name = "third_logger"
+  log_relative_path = 'log/ensembles/'
+  # log_file_name = 'log/nodes_and_edges_weight/{}.log'.format(log_time)
+  log_file_name = str(Path(log_relative_path) / '{}.log'.format(log_time))
+  log_level = logging.DEBUG
+  formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+  l_3.set_logger_params(formatter, logger_name, log_time, log_relative_path, log_file_name, log_level)
+  l_3.setup_logger()
+  # logger_2 = setup_logger(formatter, logger_name, log_file_name, level=log_level)
+
   l_1.logger.info(args)
   l_2.logger.info(args)
+  l_3.logger.info(args)
+
 
   # Train link prediction
   train_link_prediction = TrainLinkPrediction(args)
   train_link_prediction.set_random_seed()
   train_link_prediction.set_model_save_path()
   # train_link_prediction.set_loggers(logger, logger_2)
-  train_link_prediction.set_loggers_class(l_1, l_2)
+  train_link_prediction.set_loggers_class(l_1, l_2, l_3)
   train_link_prediction.run_model()

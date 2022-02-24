@@ -352,7 +352,7 @@ def get_criterion():
 #   else;
 #     return None, None
 
-def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, ef_iwf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=None, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
+def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, end_train_hard_negative_idx, nf_iwf_window_dict, ef_iwf_window_dict, ef_window_dict, nf_window_dict, share_selected_random_weight_per_window_dict, weighted_loss_method, sampled_nodes=None, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
 
   pos_edges_weight = None
   neg_edges_weight = None
@@ -377,7 +377,9 @@ def get_edges_weight(data, batch_idx, batch_size, max_weight,start_train_idx, en
     # rand_weight = np.array([random.randint(0,500) for _ in range(batch_size)]) # range =[0,500]
     pos_edges_weight = get_share_selected_random_weight_per_window(batch_size, max_weight, batch_idx, share_selected_random_weight_per_window_dict)
   elif weighted_loss_method == "ef_as_pos_edges_weight":
-    pos_edges_weight = get_ef(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict,compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
+    pos_edges_weight = get_ef(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_window_dict,compute_xf_iwf_with_sigmoid=compute_xf_iwf_with_sigmoid, edge_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
+  elif weighted_loss_method == "nf_as_pos_edges_weight":
+    pos_edges_weight = get_nf(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, nf_window_dict, node_weight_multiplier=edge_weight_multiplier, use_time_decay=use_time_decay, time_diffs=time_diffs)
   elif weighted_loss_method == "apply_time_decay_to_non_weighted_edges":
     assert time_diffs is not None
     pos_edges_weight = get_unweighted_edges_with_time_decay(data, batch_idx, batch_size,start_train_idx, end_train_hard_negative_idx, ef_iwf_window_dict, edge_weight_multiplier=edge_weight_multiplier, time_diffs=time_diffs)
@@ -414,6 +416,26 @@ def get_unweighted_edges_with_time_decay(data, batch_idx, batch_size, start_trai
   pos_edges_weight = torch.FloatTensor(pos_edges_weight)
 
   return pos_edges_weight
+
+def get_nf(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, nf_window_dict,  node_weight_multiplier=None, use_time_decay=False, time_diffs=None):
+  nodes_ = data.sources
+  # nodes_ = data.destinations
+  start_past_window_idx = start_train_idx
+  end_past_window_idx = end_train_hard_negative_idx
+  nodes_in_past_windows = nodes_[:start_past_window_idx]
+  nodes_in_current_window = nodes_[start_past_window_idx:end_past_window_idx]
+  pos_nodes_weight = []
+
+  nf_window_dict = add_only_new_values_of_new_window_to_dict(compute_nf, nodes_in_current_window, batch_size, node_weight_multiplier=node_weight_multiplier, return_x_value_dict=True, time_diffs=time_diffs, use_time_decay=use_time_decay)(
+    batch_idx, nf_window_dict, 1)
+
+  for ii in nodes_in_current_window:
+    pos_nodes_weight.append(nf_window_dict[batch_idx][ii])
+  assert len(pos_nodes_weight) == nodes_in_current_window.shape[0]
+
+  pos_nodes_weight = torch.FloatTensor(pos_nodes_weight)
+
+  return pos_nodes_weight
 
 def get_ef(data, batch_idx, batch_size, start_train_idx, end_train_hard_negative_idx, ef_window_dict, compute_xf_iwf_with_sigmoid=False, edge_weight_multiplier=None, use_time_decay=False, time_diffs=None):
   edges_ = np.vstack((data.sources, data.destinations)).T
@@ -472,7 +494,7 @@ def compute_loss(pos_label, neg_label, pos_prob, neg_prob, pos_edges_weight, neg
 
   # if batch_idx > 1 and use_ef_iwf_weight:
   # if weighted_loss_method == "ef_iwf_as_pos_edges_weight":
-  if weighted_loss_method in ["ef_iwf_as_pos_edges_weight",  "ef_as_pos_edges_weight",  "apply_time_decay_to_non_weighted_edges", "nf_iwf_as_pos_edges_weight"]:
+  if weighted_loss_method in ["ef_iwf_as_pos_edges_weight",  "ef_as_pos_edges_weight",  "apply_time_decay_to_non_weighted_edges", "nf_iwf_as_pos_edges_weight", "nf_as_pos_edges_weight"]:
     assert neg_edges_weight is None
     assert pos_edges_weight is not None
     if batch_idx >= 0:

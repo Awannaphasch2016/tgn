@@ -112,7 +112,8 @@ vc.append_value(c62.df)
 # log_file = '1644007895.1632655'
 # c64 = LinkPredictionCrawler_1(log_file)
 # c64.crawl_data()
-# c64.df['Name'] = log_file
+
+
 # vc.append_value(c64.df)
 
 # # python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --keep_last_n_window_as_window_slides 3 --window_stride_multiplier 1 --use_time_decay_multiplier
@@ -178,6 +179,59 @@ vc.append_value(c69.df)
 # c72.crawl_data()
 # c72.df['Name'] = log_file
 # vc.append_value(c72.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_nf_weight
+# here is use data.sources to compute pos_edges_weight
+# log_file = '1644242216.1149487'
+log_file = '1644242594.7757893'
+c73 = LinkPredictionCrawler_1(log_file)
+c73.crawl_data()
+c73.df['Name'] = log_file
+vc.append_value(c73.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_nf_weight
+# here is use data.destination to compute pos_edges_weight
+log_file = '1644242782.074008'
+c74 = LinkPredictionCrawler_1(log_file)
+c74.crawl_data()
+c74.df['Name'] = log_file
+vc.append_value(c74.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_ef_weight
+log_file = '1644243005.7744277'
+c75 = LinkPredictionCrawler_1(log_file)
+c75.crawl_data()
+c75.df['Name'] = log_file
+vc.append_value(c75.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_ef_weight --use_time_decay
+log_file = '1644243253.977707'
+c76 = LinkPredictionCrawler_1(log_file)
+c76.crawl_data()
+c76.df['Name'] = log_file
+vc.append_value(c76.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_ef_iwf_weight --use_time_decay
+log_file = '1644244151.472011'
+c77 = LinkPredictionCrawler_1(log_file)
+c77.crawl_data()
+c77.df['Name'] = log_file
+vc.append_value(c77.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_nf_iwf_weight --use_time_decay
+log_file = '1644244814.7723272'
+c78 = LinkPredictionCrawler_1(log_file)
+c78.crawl_data()
+c78.df['Name'] = log_file
+vc.append_value(c78.df)
+
+# python train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework forward --custom_prefix tmp --ws_multiplier 1 --window_stride_multiplier 1 --use_nf_weight --use_time_decay
+log_file = '1644245068.9889233'
+c79 = LinkPredictionCrawler_1(log_file)
+c79.crawl_data()
+c79.df['Name'] = log_file
+vc.append_value(c79.df)
+
 
 # df = pd.concat( [c54.df, c55.df, c56.df, c57.df])
 df = pd.concat(vc.dfs)

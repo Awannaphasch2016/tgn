@@ -8,6 +8,25 @@ import pandas as pd
 import logging
 from pathlib import Path
 
+
+def get_window_idx_when_slide_window_forward():
+  pass
+
+def get_window_idx_when_slide_window_backward():
+  pass
+
+def get_window_idx_when_slide_window_randomly():
+  pass
+
+# def sliding_window_forward():
+#   raise NotImplementedError
+
+# def sliding_window_backward():
+#   raise NotImplementedError
+
+# def sliding_window_random():
+#   raise NotImplementedError
+
 def get_selected_sources_of_batch_idx_relative_to_window_idx(absolute_batch_idx, ws_multiplier):
   raise NotImplementedError()
   relative_batch_idx = get_batch_idx_relative_to_window_idx(absolute_batch_idx, ws_multiplier)
@@ -43,7 +62,7 @@ def split_a_window_into_batches(window_begin_ind, window_end_ind, batch_size):
     end_batch_inds.append(((i+1) * batch_size) + min_ind)
   return end_batch_inds
 
-def right_split_ind(n_x_to_have_on_right, n_instances, x_size):
+def right_split_ind(n_x_to_have_on_right, n_instances, x_size, init_n_instances=None):
   assert n_instances/x_size == int(n_instances/x_size)
 
   n_windows = int(n_instances/x_size)
@@ -54,14 +73,17 @@ def right_split_ind(n_x_to_have_on_right, n_instances, x_size):
   ind_to_split = begin_inds[-n_x_to_have_on_right]
   end_ind = end_inds[-n_x_to_have_on_right]
 
+  if init_n_instances is not None:
+    ind_to_split = init_n_instances
+
   return begin_ind, ind_to_split, end_ind
 
 def right_split_ind_by_batch(n_batch_to_have_on_right, n_instances, batch_size):
   return right_split_ind(n_batch_to_have_on_right, n_instances, batch_size)
   # return (begin_inds[:-1], end_inds[:-1]), (begin_inds[-1], end_inds[-1])
 
-def right_split_ind_by_window(n_window_to_have_on_right, n_instances, window_size):
-  return right_split_ind(n_window_to_have_on_right, n_instances, window_size)
+def right_split_ind_by_window(n_window_to_have_on_right, n_instances, window_size, init_n_instances=None):
+  return right_split_ind(n_window_to_have_on_right, n_instances, window_size, init_n_instances)
   # assert n_instances/window_size == int(n_instances/window_size)
 
   # n_windows = int(n_instances/window_size)
@@ -148,6 +170,12 @@ def get_conditions(args):
     neg_edges_formation = "original_src_and_sampled_dst"
     weighted_loss_method = "ef_as_pos_edges_weight"
     compute_xf_iwf_with_sigmoid = False
+  elif args.use_nf_weight:
+    prefix = 'use_nf_weight'
+    neg_sample_method = "random"
+    neg_edges_formation = "original_src_and_sampled_dst"
+    weighted_loss_method = "nf_as_pos_edges_weight"
+    compute_xf_iwf_with_sigmoid = False
   elif args.use_time_decay_multiplier:
     prefix = 'use_time_decay_with_unweighted_edge'
     neg_sample_method = "random"
@@ -179,6 +207,14 @@ class NF_IWF:
   def __init__(self):
     self.dict_ = {}
 
+class NF:
+  def __init__(self):
+    self.dict_ = {}
+
+class EF:
+  def __init__(self):
+    self.dict_ = {}
+
 class SHARE_SELECTED_RANDOM_WEIGHT:
   def __init__(self):
     self.dict_ = {}
@@ -198,6 +234,14 @@ class ArgsContraint:
 
   def args_window_sliding_training(self, backprop_every):
     assert backprop_every == 1 # NOTE: current implementation of ensemble will assume backprop_every to be 1
+
+  def args_setting_init_n_instances_as_multiple_of_ws_constraint(self, init_n_instances_as_multiple_of_ws, ws_framework):
+    if init_n_instances_as_multiple_of_ws is not None:
+      assert ws_framework == 'ensemble'
+
+  def args_fix_begin_data_ind_of_models_in_ensemble(self, fix_begin_data_ind_of_models_in_ensemble, ws_framework):
+    if fix_begin_data_ind_of_models_in_ensemble:
+      assert ws_framework == 'ensemble'
 
 def return_min_length_of_list_members(list_of_vars, is_flatten_list=False):
   min_length = float('inf')
@@ -235,6 +279,7 @@ class CheckPoint():
         self.ws_idx = None
         self.ws_max = None
         self.custom_prefix = 'None' # custom_prefix can be None. it value is from args.prefix.
+        self.ensemble_idx = None
         self.epoch_max = None
         self.run_idx = None
         self.log_timestamp = None
@@ -257,11 +302,16 @@ class CheckPoint():
         else:
           max_random_weight_range = int(self.max_random_weight_range)
 
+        if self.ensemble_idx is None:
+          ensemble_idx = "None"
+        else:
+          ensemble_idx = self.ensemble_idx
 
         checkpoint_path = None
         general_checkpoint_path = None
 
-        general_checkpoint_path = Path(f'custom_prefix={self.custom_prefix}-prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx={self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
+        # general_checkpoint_path = Path(f'custom_prefix={self.custom_prefix}-prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-run_idx={self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
+        general_checkpoint_path = Path(f'custom_prefix={self.custom_prefix}-prefix={self.prefix}-data={self.data}-ws_max={self.ws_max}-epoch_max={self.epoch_max}-bs={self.bs}-ws_idx{self.ws_idx}-ensemble_idx={ensemble_idx}-run_idx={self.run_idx}-{self.log_timestamp}-max_weight={max_random_weight_range}.pth')
 
         if self.is_node_classification:
             checkpoint_dir = 'node-classification'
@@ -492,13 +542,13 @@ def compute_ef(edges_in_current_window, window_size, edge_weight_multiplier=None
     return ef
 
 
-def compute_nf(nodes_in_current_window, window_size, edge_weight_multiplier=None, return_x_value_dict=False, time_diffs=None, use_time_decay=False):
+def compute_nf(nodes_in_current_window, window_size, node_weight_multiplier=None, return_x_value_dict=False, time_diffs=None, use_time_decay=False):
 
   compute_as_nodes = True
 
   current_src_uniq_nodes, _, current_src_uniq_nodes_freq =  get_uniq_nodes_freq_in_window(nodes_in_current_window)
 
-  nf = current_src_uniq_nodes_freq
+  nf = current_src_uniq_nodes_freq * node_weight_multiplier
 
   if use_time_decay:
     nf = nf * compute_time_decay_multipler(nodes_in_current_window, window_size, compute_as_nodes=compute_as_nodes, return_x_value_dict=False, time_diffs=time_diffs)
@@ -686,7 +736,7 @@ def compute_xf_iwf(x_in_past_windows, x_in_current_window, batch_size, compute_a
   current_uniq_x, uniq_x_idx, current_uniq_x_freq = get_uniq_x_freq_in_window(x_in_current_window, compute_as_nodes)
 
   if compute_as_nodes:
-    xf = compute_nf(x_in_current_window, batch_size, edge_weight_multiplier=edge_weight_multiplier)
+    xf = compute_nf(x_in_current_window, batch_size, node_weight_multiplier=edge_weight_multiplier)
 
     # time_diffs_batch_size = int(time_diffs.shape[0]/3)
     # time_diffs = time_diffs[:time_diffs_batch_size]
