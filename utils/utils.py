@@ -235,9 +235,15 @@ class ArgsContraint:
   def args_window_sliding_training(self, backprop_every):
     assert backprop_every == 1 # NOTE: current implementation of ensemble will assume backprop_every to be 1
 
-  def args_setting_init_n_instances_as_multiple_of_ws_constraint(self, init_n_instances_as_multiple_of_ws, ws_framework):
+  def args_setting_init_n_instances_as_multiple_of_ws_constraint(self, init_n_instances_as_multiple_of_ws, ws_framework, window_idx_to_start_with):
     if init_n_instances_as_multiple_of_ws is not None:
-      assert ws_framework == 'ensemble'
+      assert window_idx_to_start_with is None
+
+    if window_idx_to_start_with is not None:
+      assert init_n_instances_as_multiple_of_ws is None
+
+    # if init_n_instances_as_multiple_of_ws is not None:
+    #   assert ws_framework == 'ensemble'
 
   def args_fix_begin_data_ind_of_models_in_ensemble(self, fix_begin_data_ind_of_models_in_ensemble, ws_framework):
     if fix_begin_data_ind_of_models_in_ensemble:

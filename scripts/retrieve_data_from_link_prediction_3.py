@@ -68,22 +68,48 @@ vc =  ValueCollection()
 # c75.df['Name'] = log_file
 # vc.append_value(c75.df)
 
-# (list "-d" "reddit_10000" "--use_memory" "--n_runs" "1" "--n_epoch" "5" "--bs" "200" "--ws_multiplier" "1" "--custom_prefix" "tmp" "--ws_framework" "ensemble" "--disable_cuda")
-# log_file = '1645467382.394281'
-# log_file = '1645468621.269857'
-log_file = '1645468840.7249002'
-c76 = LinkPredictionCrawler_1(log_file)
-c76.crawl_data()
-c76.df['Name'] = log_file
-vc.append_value(c76.df)
+# # (list "-d" "reddit_10000" "--use_memory" "--n_runs" "1" "--n_epoch" "5" "--bs" "200" "--ws_multiplier" "1" "--custom_prefix" "tmp" "--ws_framework" "ensemble" "disable_cuda" "init_n_instances_as_multiple_of_ws" "5")
+# log_file = '1645468840.7249002'
+# c76 = LinkPredictionCrawler_1(log_file)
+# c76.crawl_data()
+# c76.df['Name'] = log_file
+# vc.append_value(c76.df)
 
-# (list "-d" "reddit_10000" "--use_memory" "--n_runs" "1" "--n_epoch" "5" "--bs" "200" "--ws_multiplier" "1" "--custom_prefix" "tmp" "--ws_framework" "ensemble" "--disable_cuda" "--init_n_instances_as_multiple_of_ws" "6" "--fix_begin_data_ind_of_models_in_ensemble")
-# log_file = '1645559677.4656665'
-log_file = '1645560100.8301754'
-c77 = LinkPredictionCrawler_1(log_file)
-c77.crawl_data()
-c77.df['Name'] = log_file
-vc.append_value(c77.df)
+# # (list "-d" "reddit_10000" "--use_memory" "--n_runs" "1" "--n_epoch" "5" "--bs" "200" "--ws_multiplier" "1" "--custom_prefix" "tmp" "--ws_framework" "ensemble" "--disable_cuda" "--init_n_instances_as_multiple_of_ws" "5" "--fix_begin_data_ind_of_models_in_ensemble")
+# # log_file = '1645559677.4656665'
+# log_file = '1645560100.8301754'
+# c77 = LinkPredictionCrawler_1(log_file)
+# c77.crawl_data()
+# c77.df['Name'] = log_file
+# vc.append_value(c77.df)
+
+# /mnt/beegfs/home/awannaphasch2016/.conda/envs/py38/bin/python3 train_self_supervised.py -d reddit_100000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5 --fix_begin_data_ind_of_models_in_ensemble
+log_file = '1645686262.971807'
+c78 = LinkPredictionCrawler_1(log_file)
+c78.crawl_data()
+c78.df['Name'] = log_file
+vc.append_value(c78.df)
+
+# /mnt/beegfs/home/awannaphasch2016/.conda/envs/py38/bin/python3 train_self_supervised.py -d reddit_100000 --use_memory --n_runs 1 --n_epoch 5 --bs 1000  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5
+log_file = '1645689302.0818634'
+c79 = LinkPredictionCrawler_1(log_file)
+c79.crawl_data()
+c79.df['Name'] = log_file
+vc.append_value(c79.df)
+
+# # /mnt/beegfs/home/awannaphasch2016/.conda/envs/py38/bin/python3 train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 50 --bs 200  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5
+# log_file = '1645691761.0638666'
+# c80 = LinkPredictionCrawler_1(log_file)
+# c80.crawl_data()
+# c80.df['Name'] = log_file
+# vc.append_value(c80.df)
+
+# # /mnt/beegfs/home/awannaphasch2016/.conda/envs/py38/bin/python3 train_self_supervised.py -d reddit_10000 --use_memory --n_runs 1 --n_epoch 50 --bs 200  --ws_framework ensemble --custom_prefix tmp --ws_multiplier 1 --init_n_instances_as_multiple_of_ws 5 --fix_begin_data_ind_of_models_in_ensemble
+# log_file = '1645692348.8669064'
+# c81 = LinkPredictionCrawler_1(log_file)
+# c81.crawl_data()
+# c81.df['Name'] = log_file
+# vc.append_value(c81.df)
 
 df = pd.concat(vc.dfs)
 df.reset_index(inplace=True)

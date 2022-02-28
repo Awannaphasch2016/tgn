@@ -199,7 +199,7 @@ class TrainLinkPrediction(Train):
     args_constraint.args_naming_contraint(args.prefix)
     args_constraint.args_window_sliding_contraint(full_data.data_size, WINDOW_SIZE, BATCH_SIZE)
     args_constraint.args_window_sliding_training(args.backprop_every)
-    args_constraint.args_setting_init_n_instances_as_multiple_of_ws_constraint(args.init_n_instances_as_multiple_of_ws, args.ws_framework)
+    args_constraint.args_setting_init_n_instances_as_multiple_of_ws_constraint(args.init_n_instances_as_multiple_of_ws, args.ws_framework, args.window_idx_to_start_with)
     args_constraint.args_fix_begin_data_ind_of_models_in_ensemble(args.fix_begin_data_ind_of_models_in_ensemble, args.ws_framework)
 
     # Compute time statistics
